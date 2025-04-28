@@ -4,7 +4,7 @@
         saveprim=.true.
         convert_type='vtuBCCmpi'
         autoconvert=f
-        nwauxio=9
+        nwauxio=6
  /
         convert_type='vtuBCCmpi'
 
@@ -12,13 +12,12 @@
         itsave(1,1)=0
         itsave(1,2)=0
         dtsave_log=0.01d0
-        dtsave_dat=1.d0
-        ditsave_dat=5
+        dtsave_dat=0.5d0
  /
         dtsave_custom=0.05d0
 
  &stoplist
-        it_max=5
+        time_max=20.d0
  /
         time_max=0.0d0
         it_max=1000
@@ -34,30 +33,30 @@
         typeboundspeed='cmaxmean'
 
  &boundlist
-        typeboundary_min1=7*'special'
-        typeboundary_max1=7*'special'
-        typeboundary_min2=7*'special'
-        typeboundary_max2=7*'special'
-        typeboundary_min3=7*'special'
-        typeboundary_max3=7*'special'
+        typeboundary_min1=8*'special'
+        typeboundary_max1=8*'special'
+        typeboundary_min2=8*'special'
+        typeboundary_max2=8*'special'
+        typeboundary_min3=8*'special'
+        typeboundary_max3=8*'special'
  /
 
  &meshlist
-        refine_max_level=4
+        refine_max_level=5
         refine_threshold=20*0.2d0
-        block_nx1=16
-        block_nx2=16
-        block_nx3=16
-        domain_nx1=32
-        domain_nx2=32
-        domain_nx3=32
+        block_nx1=10
+        block_nx2=10
+        block_nx3=10
+        domain_nx1=40
+        domain_nx2=40
+        domain_nx3=40
         iprob=1
         xprobmin1=-20.0d0
         xprobmax1=20.0d0
         xprobmin2=-20.0d0
         xprobmax2=20.0d0
         xprobmin3=0.d0
-        xprobmax3=40.d0
+        xprobmax3=16.d0
  /
         w_refine_weight(1)=0.4d0
         w_refine_weight(6)=0.2d0
@@ -76,17 +75,16 @@
  /
 
  &mhd_list
-        mhd_energy=.false.
+        mhd_energy=.true.
         mhd_gravity=.true.
+        mhd_internal_e=.true.
         typedivbfix='ct'
-        mhd_adiab=1.d0
-        mhd_gamma=1.d0
         B0field=.true.
         B0field_forcefree=.true.
  /
         B0field=.false.
         B0field_forcefree=.false.
-        mhd_internal_energy=.true.
+        mhd_internal_e=.true.
         mhd_thermal_conduction=.true.
         mhd_radiative_cooling=.true.
         mhd_trac=.true.
@@ -99,8 +97,8 @@
         dv = 1.7d0
         Bv = 25.d0
         xv = -8.d0
-        ttwist = 100.d0
-        Bl = 0.6
-        Br = 20
-        kB = 5
-        v0 = 100.d0
+        ttwist = 10.d0
+        Bl = 0.6d0
+        Br = 20.d0
+        kB = 5.d0
+        v0 = 1.d-4

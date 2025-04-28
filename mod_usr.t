@@ -195,6 +195,7 @@ contains
     if(first)then
       if(mype==0) then
       write(*,*)'Fan-spine field from Wyper2016a, now isothermal'
+      write(*,*)'B0field', B0field
     endif
       first=.false.
     endif
@@ -271,7 +272,6 @@ contains
     double precision :: xh, yh, zh, yv, zv
 
     Avec(ixO^S,:) = 0.d0
-    Bvec(ixO^S,:) = 0.d0
 
     xh = 0.d0
     yh = 0.d0
@@ -697,17 +697,18 @@ contains
        end if
 
       ! driven velocity at the parasitic polarity
+       if (B0field) then
       if (qt < ttwist) then
        {do ix^DB=ixOmin^DB,ixOmax^DB\}
           if ((x(ix^D,1) < 0.d0) .and. (block%B0(ix^D,3,b0i) > Bl) .and. (block%B0(ix^D,3,b0i) < Br)) then
             gBx = kB*(Br-Bl)/block%B0(ix^D,3,b0i)*tanh(kB*(block%B0(ix^D,3,b0i)-Bl)/(Br-Bl))
             call bottom_driven_velocity(x(ix^D,1),x(ix^D,2),x(ix^D,3),qt,vdriven)
-
             w(ix^D,mom(1)) = v0*gBx*vdriven(1)
             w(ix^D,mom(2)) = v0*gBx*vdriven(2)
             end if
        {end do\}
       end if
+       end if
 
        call mhd_to_conserved(ixI^L,ixO^L,w,x)
      case(6)
@@ -917,7 +918,9 @@ contains
     double precision                   :: normconv(0:nw+nwauxio)
     double precision                   :: tmp(ixI^S),dip(ixI^S),divb(ixI^S),B2(ixI^S)
     double precision, dimension(ixI^S,1:ndir) :: Btotal,qvec,curlvec
-    integer                            :: ix^D,idirmin,idims,idir,jdir,kdir
+    integer                            :: ix^D,idirmin,idims,idir,jdir,kdir, nwspecial
+
+    nwspecial = 1
 
     ! Btotal & B^2
     if(B0field) then
@@ -927,21 +930,24 @@ contains
     end if
     B2(ixO^S)=sum((Btotal(ixO^S,:))**2,dim=ndim+1)
     ! output Alfven wave speed B/sqrt(rho)
-    w(ixO^S,nw+1)=dsqrt(B2(ixO^S)/w(ixO^S,rho_))
+    ! w(ixO^S,nw+nwspecial)=dsqrt(B2(ixO^S)/w(ixO^S,rho_))
+    ! nwspecial = nwspecial + 1
     ! output divB1
-    call get_divb(w,ixI^L,ixO^L,divb)
-    w(ixO^S,nw+2)=divb(ixO^S)
+    ! call get_divb(w,ixI^L,ixO^L,divb)
+    ! w(ixO^S,nw+nwspecial)=divb(ixO^S)
+    ! nwspecial = nwspecial + 1
     ! output the plasma beta p*2/B**2
-    call mhd_get_pthermal(w,x,ixI^L,ixO^L,tmp)
-    where(B2(ixO^S)/=0.d0)
-      w(ixO^S,nw+3)=2.d0*tmp(ixO^S)/B2(ixO^S)
-    else where
-      w(ixO^S,nw+3)=0.d0
-    end where
+    ! call mhd_get_pthermal(w,x,ixI^L,ixO^L,tmp)
+    ! where(B2(ixO^S)/=0.d0)
+    !   w(ixO^S,nw+3)=2.d0*tmp(ixO^S)/B2(ixO^S)
+    ! else where
+    !   w(ixO^S,nw+3)=0.d0
+    ! end where
     ! store current
     call curlvector(Btotal,ixI^L,ixO^L,curlvec,idirmin,1,ndir)
     do idir=1,ndir
-      w(ixO^S,nw+3+idir)=curlvec(ixO^S,idir)
+      w(ixO^S,nw+nwspecial)=curlvec(ixO^S,idir)
+      nwspecial = nwspecial + 1
     end do
     ! calculate Lorentz force
     qvec(ixO^S,1:ndir)=zero
@@ -956,7 +962,8 @@ contains
       endif
     enddo; enddo; enddo
     do idir=1,ndir
-      w(ixO^S,nw+3+ndir+idir)=qvec(ixO^S,idir)
+      w(ixO^S,nw+nwspecial)=qvec(ixO^S,idir)
+      nwspecial = nwspecial + 1
     end do
     ! find magnetic dips
     !dip=0.d0
@@ -1001,7 +1008,7 @@ contains
     use mod_global_parameters
     character(len=*) :: varnames
 
-    varnames='Alfv divB beta j1 j2 j3 L1 L2 L3'
+    varnames='j1 j2 j3 L1 L2 L3'
   end subroutine specialvarnames_output
 
 end module mod_usr
