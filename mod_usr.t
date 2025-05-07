@@ -11,7 +11,10 @@ module mod_usr
   double precision :: q_para,d_para,L_para, charge1_x(3), charge2_x(3), charge1, charge2
 
   double precision :: dh, Bh, dv, Bv, xv ! fan-spine parameters
-  double precision :: ttwist, Bl, Br, kB, v0, cv, ch
+  double precision :: ttwist, Bl, Br, kB, v0, cv, ch, r2
+
+  logical :: isfluxcancel = .false.
+  logical :: issolaratm = .true.
 
 contains
 
@@ -50,7 +53,7 @@ contains
     character(len=*), intent(in) :: files(:)
     integer                      :: n
  
-    namelist /my_list/ dh, Bh, dv, Bv, xv, ttwist, Bl, Br, kB, v0 ! where you tell the code to read your own parameters
+    namelist /my_list/ dh, Bh, dv, Bv, xv, ttwist, Bl, Br, kB, v0, r2, issolaratm, isfluxcancel
  
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -107,7 +110,7 @@ contains
     cv = (Bv*dv**3)*half
     ch = (Bh*dh**3)*half
 
-    if(mhd_energy) call inithdstatic
+    if(mhd_energy .and. issolaratm) call inithdstatic
 
   end subroutine initglobaldata_usr
 
@@ -214,13 +217,20 @@ contains
     end if
     w(ixO^S,mom(:))=0.d0
 
-    if(mhd_energy) then
+    if(mhd_energy .and. issolaratm) then
       {do ix^DB=ixOmin^DB,ixOmax^DB\}
          na=floor((x(ix^D,3)-xprobmin3+gzone)/dr+0.5d0)
          res=x(ix^D,3)-xprobmin3+gzone-(dble(na)-0.5d0)*dr
          w(ix^D,rho_)=ra(na)+(one-cos(dpi*res/dr))/two*(ra(na+1)-ra(na))
          w(ix^D,p_)  =pa(na)+(one-cos(dpi*res/dr))/two*(pa(na+1)-pa(na))
       {end do\}
+    else if (mhd_energy .and. .not. issolaratm .and. .not. mhd_gravity) then
+      w(ixO^S,rho_)=1.d0
+      w(ixO^S,p_)=1.d0
+    else if (mhd_energy .and. .not. issolaratm .and. mhd_gravity) then
+      if (mype==0) then
+        stop 'mhd_gravity and .not. issolaratm are not compatible'
+      end if
     else if(mhd_adiab/=0) then
       ! isothermal
       w(ixO^S,rho_)=rhob*dexp(usr_grav*SRadius**2/Tiso*&
@@ -346,11 +356,18 @@ contains
     c1 = Bh*dh**3*half
     c2 = Bv*dv**3*half
 
-    ft = 1! half*(1-cos(2*dpi*(qt/ttwist)))
+    ft = half*(1-cos(2*dpi*(qt/ttwist)))
 
     xh = 0; yh = 0; zh = -dh; yv = 0; zv = -dv
     lh = (x1-xh)**2+(x2-yh)**2+(x3-zh)**2
     lv = (x1-xv)**2+(x2-yv)**2+(x3-zv)**2
+
+    if (isfluxcancel) then
+      vdriven(1) = v0*sin(2*dpi*qt/ttwist)**2*exp(-((x1-xv)**2+(x2-yv)**2)/r2)
+      ! vdriven(1) = v0*exp(-((x1-xv)**2+(x2-yv)**2)/r2)
+      vdriven(2) = 0.d0
+      return
+    end if
 
     Bzdx = -15*c1*(x1-xh)**2*(x3-zh)/lh**(7./2)+ &
             (15*c2*(x1-xv)**3 + 15*c2*(x1-xv)*(x2-yv)**2) / lv**(7./2) + &
@@ -377,7 +394,7 @@ contains
     integer :: ixC^L
 
     ! fix Bz at bottom boundary
-    if(s%is_physical_boundary(5)) then
+    if(s%is_physical_boundary(5) .and. .not. isfluxcancel) then
       ixCmin^D=ixOmin^D-1;
       ixCmax^D=ixOmax^D;
       fE(nghostcells^%3ixC^S,1:2)=0.d0
@@ -683,10 +700,15 @@ contains
                +29.d0*w(ix3+1^%3ixO^S,mag(:)))
          end do
        end if
-       if(mhd_energy) then
+       if(mhd_energy .and. issolaratm) then
          do ix3=ixOmin3,ixOmax3
            w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ix3,rho_)=rbc(ix3)
            w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ix3,p_)=pbc(ix3)
+         enddo
+       else if (mhd_energy .and. .not. issolaratm) then
+         do ix3=ixOmin3,ixOmax3
+           w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ix3,rho_)=1.0d0
+           w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ix3,p_)=1.0d0
          enddo
        else if(mhd_adiab==0) then
          ! zero beta
@@ -697,7 +719,12 @@ contains
        end if
 
       ! driven velocity at the parasitic polarity
-       if (B0field) then
+      if (isfluxcancel) then
+       {do ix^DB=ixOmin^DB,ixOmax^DB\}
+        call bottom_driven_velocity(x(ix^D,1),x(ix^D,2),x(ix^D,3),qt,vdriven)
+        w(ix^D,mom(1)) = v0*vdriven(1)
+       {end do\}
+      else if (B0field) then
       if (qt < ttwist) then
        {do ix^DB=ixOmin^DB,ixOmax^DB\}
           if ((x(ix^D,1) < 0.d0) .and. (block%B0(ix^D,3,b0i) > Bl) .and. (block%B0(ix^D,3,b0i) < Br)) then

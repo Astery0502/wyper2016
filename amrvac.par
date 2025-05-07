@@ -1,9 +1,9 @@
 !setup.pl -d=3
  &filelist
-        base_filename='data/ctB0'
+        base_filename='data/col'
         saveprim=.true.
         convert_type='vtuBCCmpi'
-        autoconvert=f
+        autoconvert=t
         nwauxio=6
  /
         convert_type='vtuBCCmpi'
@@ -12,12 +12,13 @@
         itsave(1,1)=0
         itsave(1,2)=0
         dtsave_log=0.01d0
-        dtsave_dat=0.5d0
+        dtsave_dat=1.d0
  /
+        dtsave_dat=0.5d0
         dtsave_custom=0.05d0
 
  &stoplist
-        time_max=20.d0
+        time_max=10.d0
  /
         time_max=0.0d0
         it_max=1000
@@ -26,8 +27,8 @@
         time_stepper=  'threestep'
         flux_scheme=    20*'hlld'
         limiter= 20*'wenoz5'
- /
         check_small_values=.true.
+ /
         tvdlfeps=0.d0
         trace_small_values=.true.
         typeboundspeed='cmaxmean'
@@ -42,7 +43,7 @@
  /
 
  &meshlist
-        refine_max_level=5
+        refine_max_level=4
         refine_threshold=20*0.2d0
         block_nx1=10
         block_nx2=10
@@ -51,10 +52,10 @@
         domain_nx2=40
         domain_nx3=40
         iprob=1
-        xprobmin1=-20.0d0
-        xprobmax1=20.0d0
-        xprobmin2=-20.0d0
-        xprobmax2=20.0d0
+        xprobmin1=-12.0d0
+        xprobmax1=8.0d0
+        xprobmin2=-10.0d0
+        xprobmax2=10.0d0
         xprobmin3=0.d0
         xprobmax3=16.d0
  /
@@ -76,7 +77,7 @@
 
  &mhd_list
         mhd_energy=.true.
-        mhd_gravity=.true.
+        mhd_gravity=.false.
         mhd_internal_e=.true.
         typedivbfix='ct'
         B0field=.true.
@@ -92,13 +93,16 @@
         mhd_adiab=0.d0
 
  &my_list
-        dh = 10.d0
+        dh = 4.4d0
         Bh = 8.d0
-        dv = 1.7d0
+        dv = 1.d0
         Bv = 25.d0
-        xv = -8.d0
+        xv = -5.d0
         ttwist = 10.d0
-        Bl = 0.6d0
-        Br = 20.d0
+        Bl = 0.3d0
+        Br = 23.d0
         kB = 5.d0
-        v0 = 1.d-4
+        v0 = 1.d-2
+        issolaratm=.false.
+        isfluxcancel=.true.
+        r2 = 0.04d0
