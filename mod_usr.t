@@ -15,6 +15,11 @@ module mod_usr
 
   logical :: isfluxcancel = .false.
   logical :: issolaratm = .true.
+  logical :: isvdriven = .false.
+
+  ! stored bottom edge magnetic field b3 
+  double precision, allocatable :: b3e(:,:)
+  double precision :: zeta0
 
 contains
 
@@ -41,6 +46,8 @@ contains
     usr_set_B0          => specialset_B0
     usr_set_J0          => specialset_J0
 
+    ! usr_write_analysis  => my_analysis
+
     call params_read(par_files)
     call set_coordinate_system("Cartesian_3D")
     call mhd_activate()
@@ -53,7 +60,7 @@ contains
     character(len=*), intent(in) :: files(:)
     integer                      :: n
  
-    namelist /my_list/ dh, Bh, dv, Bv, xv, ttwist, Bl, Br, kB, v0, r2, issolaratm, isfluxcancel
+    namelist /my_list/ dh, Bh, dv, Bv, xv, ttwist, Bl, Br, kB, v0, r2, zeta0, issolaratm, isfluxcancel
  
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -83,6 +90,8 @@ contains
       ! isothermal uniform temperature
       Tiso= mhd_adiab
     end if
+    rhob=2.d0
+    Tiso = 1.d0
 
     bQ0=1.d-4/unit_pressure*unit_time          ! 3.697693390805347E-003 erg*cm^-3/s
 
@@ -107,8 +116,11 @@ contains
     charge2_x(2)=0.d0
     charge2_x(3)=-d_para
 
-    cv = (Bv*dv**3)*half
-    ch = (Bh*dh**3)*half
+    cv = (Bv*dv**3.d0)*half
+    ch = (Bh*dh**3.d0)*half
+
+    allocate(b3e(0:domain_nx1*2**(refine_max_level-1),0:domain_nx2*2**(refine_max_level-1)))
+    b3e = 0.d0
 
     if(mhd_energy .and. issolaratm) call inithdstatic
 
@@ -199,6 +211,7 @@ contains
       if(mype==0) then
       write(*,*)'Fan-spine field from Wyper2016a, now isothermal'
       write(*,*)'B0field', B0field
+      write(*,*)'nghostcells', nghostcells
     endif
       first=.false.
     endif
@@ -225,12 +238,13 @@ contains
          w(ix^D,p_)  =pa(na)+(one-cos(dpi*res/dr))/two*(pa(na+1)-pa(na))
       {end do\}
     else if (mhd_energy .and. .not. issolaratm .and. .not. mhd_gravity) then
-      w(ixO^S,rho_)=1.d0
-      w(ixO^S,p_)=1.d0
-    else if (mhd_energy .and. .not. issolaratm .and. mhd_gravity) then
       if (mype==0) then
         stop 'mhd_gravity and .not. issolaratm are not compatible'
       end if
+    else if (mhd_energy .and. .not. issolaratm .and. mhd_gravity) then
+      w(ixO^S,rho_)=rhob*dexp(usr_grav*SRadius**2/Tiso*&
+                    (1.d0/SRadius-1.d0/(x(ixO^S,3)+SRadius)))
+      w(ixO^S,p_)  =w(ixO^S,rho_)*Tiso
     else if(mhd_adiab/=0) then
       ! isothermal
       w(ixO^S,rho_)=rhob*dexp(usr_grav*SRadius**2/Tiso*&
@@ -311,6 +325,23 @@ contains
     end if
   end subroutine wyper2016a_field
 
+  subroutine wyper2016a_b3(xc^D, b3)
+
+    double precision, intent(in) :: xc^D
+    double precision, intent(inout) :: b3
+    double precision :: xh, yh, zh, yv, zv
+
+    xh = 0.d0; yh = 0.d0; zh = -1 * dh
+
+    ! xv already defined in amrvac.par
+    yv = 0.d0; zv = -1 * dv
+
+    b3 = 3.d0*ch*(xc1-xh)*(xc3-zh) / ((xc1-xh)**2+(xc2-yh)**2+(xc3-zh)**2)**(5./2.) + & 
+                    (-3.d0)*cv*((xc2-yv)**2+(xc1-xv)**2) / ((xc1-xv)**2+(xc2-yv)**2+(xc3-zv)**2)**(5./2.) + & 
+                    2.d0*cv/((xc1-xv)**2+(xc2-yv)**2+(xc3-zv)**2)**(3./2.)
+  
+  end subroutine wyper2016a_b3
+
     
   subroutine bipolar_field(ixI^L,ixO^L,x,A,Bbp) 
 
@@ -385,19 +416,63 @@ contains
 
   ! allow user to change inductive electric field, especially for boundary driven applications
   subroutine driven_electric_field(ixI^L,ixO^L,qt,qdt,fE,s)
+    use mod_forest, only: igrid_to_node
     use mod_global_parameters
     integer, intent(in)                :: ixI^L, ixO^L
     double precision, intent(in)       :: qt,qdt
     type(state)                        :: s
     double precision, intent(inout)    :: fE(ixI^S,7-2*ndim:3)
 
-    integer :: ixC^L
+    integer :: ixC^L, ix^D, ig^D, imin^D
+    double precision :: xb^D, b3
+
+    integer :: ixA^L
+    integer :: ixB^L
+    integer :: idim1, idim2
 
     ! fix Bz at bottom boundary
-    if(s%is_physical_boundary(5) .and. .not. isfluxcancel) then
+    if(s%is_physical_boundary(5)) then
       ixCmin^D=ixOmin^D-1;
       ixCmax^D=ixOmax^D;
       fE(nghostcells^%3ixC^S,1:2)=0.d0
+    end if
+
+    ! add STITCH injection of helicity at the bottom cells
+    if (s%is_physical_boundary(5)) then
+
+      ! stagger grid index
+      ixCmin^D=ixOmin^D-1;
+      ixCmax^D=ixOmax^D;
+
+      ! here we use block to point to the state by assuming that ps, ps1, ps2, ps3, ... share the same grid
+      ! get the global index of the block points
+      ig^D=igrid_to_node(block%igrid, mype)%node%ig^D;
+      imin^D=(ig^D-1)*block_nx^D;
+
+      if (qt == 0) then
+        ! assume the bottom blocks are fully refined
+        do ix1=ixCmin1,ixCmax1
+          do ix2=ixCmin2,ixCmax2
+            xb^D=block%x(ix1+1,ix2+1,ixOmin1,^D)-half*block%dx(ix1+1,ix2+1,ixOmin1,^D);
+            call wyper2016a_b3(xb^D,b3)
+            b3e(imin1+ix1-nghostcells,imin2+ix2-nghostcells) = b3 * zeta0 ! now for uniform zeta
+          end do
+        end do
+      end if
+
+      ! add STITCH (Dahlin et al. 2022) helicity inspired driven electric field
+      ! direction of line integral of electric field
+      do idim1 = 1,2
+        idim2 = 3-idim1 
+        ixCmax^D=ixOmax^D;
+        ixCmin^D=ixOmin^D-kr(idim2,^D);
+        ! global index
+        ixB^L=ixC^L+imin^D-nghostcells;
+        ixA^L=ixB^L-kr(idim1,^D);
+
+        fE(nghostcells^%3ixC^S,idim1) = fE(nghostcells^%3ixC^S,idim1) - qdt*&
+          (b3e(ixBmin1:ixBmax1,ixBmin2:ixBmax2)-b3e(ixAmin1:ixAmax1,ixAmin2:ixAmax2))
+      end do
     end if
 
   end subroutine driven_electric_field
@@ -707,9 +782,12 @@ contains
          enddo
        else if (mhd_energy .and. .not. issolaratm) then
          do ix3=ixOmin3,ixOmax3
-           w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ix3,rho_)=1.0d0
-           w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ix3,p_)=1.0d0
+          w(ixO^S,rho_)=rhob*dexp(usr_grav*SRadius**2/Tiso*&
+                      (1.d0/SRadius-1.d0/(x(ixO^S,3)+SRadius)))
+          w(ixO^S,p_)=w(ixO^S,rho_)*Tiso
          enddo
+       else if (mhd_energy .and. .not. issolaratm .and. .not. mhd_gravity) then
+        stop 'No mhd_gravity and .not. issolaratm are not set'
        else if(mhd_adiab==0) then
          ! zero beta
          w(ixO^S,rho_)=sum(w(ixO^S,mag(:))**2,dim=ndim+1)
@@ -719,23 +797,25 @@ contains
        end if
 
       ! driven velocity at the parasitic polarity
-      if (isfluxcancel) then
-       {do ix^DB=ixOmin^DB,ixOmax^DB\}
-        call bottom_driven_velocity(x(ix^D,1),x(ix^D,2),x(ix^D,3),qt,vdriven)
-        w(ix^D,mom(1)) = v0*vdriven(1)
-       {end do\}
-      else if (B0field) then
-      if (qt < ttwist) then
-       {do ix^DB=ixOmin^DB,ixOmax^DB\}
-          if ((x(ix^D,1) < 0.d0) .and. (block%B0(ix^D,3,b0i) > Bl) .and. (block%B0(ix^D,3,b0i) < Br)) then
-            gBx = kB*(Br-Bl)/block%B0(ix^D,3,b0i)*tanh(kB*(block%B0(ix^D,3,b0i)-Bl)/(Br-Bl))
-            call bottom_driven_velocity(x(ix^D,1),x(ix^D,2),x(ix^D,3),qt,vdriven)
-            w(ix^D,mom(1)) = v0*gBx*vdriven(1)
-            w(ix^D,mom(2)) = v0*gBx*vdriven(2)
-            end if
-       {end do\}
+      if (isvdriven) then
+        if (isfluxcancel) then
+        {do ix^DB=ixOmin^DB,ixOmax^DB\}
+          call bottom_driven_velocity(x(ix^D,1),x(ix^D,2),x(ix^D,3),qt,vdriven)
+          w(ix^D,mom(1)) = v0*vdriven(1)
+        {end do\}
+        else if (B0field) then
+          if (qt < ttwist) then
+          {do ix^DB=ixOmin^DB,ixOmax^DB\}
+            if ((x(ix^D,1) < 0.d0) .and. (block%B0(ix^D,3,b0i) > Bl) .and. (block%B0(ix^D,3,b0i) < Br)) then
+              gBx = kB*(Br-Bl)/block%B0(ix^D,3,b0i)*tanh(kB*(block%B0(ix^D,3,b0i)-Bl)/(Br-Bl))
+              call bottom_driven_velocity(x(ix^D,1),x(ix^D,2),x(ix^D,3),qt,vdriven)
+              w(ix^D,mom(1)) = v0*gBx*vdriven(1)
+              w(ix^D,mom(2)) = v0*gBx*vdriven(2)
+              end if
+          {end do\}
+          end if
+        end if
       end if
-       end if
 
        call mhd_to_conserved(ixI^L,ixO^L,w,x)
      case(6)
@@ -1037,5 +1117,42 @@ contains
 
     varnames='j1 j2 j3 L1 L2 L3'
   end subroutine specialvarnames_output
+
+  subroutine my_analysis()
+
+    if (mype == 0) then
+      call write_b3e_binary()
+    end if
+
+  end subroutine my_analysis
+
+  subroutine write_b3e_binary()
+    use mod_global_parameters
+    implicit none
+    integer :: iunit
+    character(len=100) :: filename
+
+    ! Only the root process writes the file
+    if (mype == 0) then
+      filename = 'data/b3e.bin'
+      iunit = 123  ! Choose an unused unit number
+      
+      ! Open binary file
+      open(unit=iunit, file=trim(filename), form='unformatted', status='replace', &
+           access='stream', action='write')
+      
+      ! Write array dimensions first
+      write(iunit) size(b3e,1), size(b3e,2)
+      
+      ! Write the entire array
+      write(iunit) b3e
+      
+      ! Close the file
+      close(iunit)
+      
+      print *, 'Wrote b3e array to ', trim(filename)
+    end if
+    
+  end subroutine write_b3e_binary
 
 end module mod_usr
