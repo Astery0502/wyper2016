@@ -19,6 +19,7 @@ module mod_usr
 
   ! stored bottom edge magnetic field b3 
   double precision, allocatable :: b3e(:,:)
+  ! double precision, allocatable :: db3(:,:,:)
   double precision :: zeta0
 
 contains
@@ -46,6 +47,7 @@ contains
     usr_set_B0          => specialset_B0
     usr_set_J0          => specialset_J0
 
+    ! usr_process_grid    => my_process_grid 
     ! usr_write_analysis  => my_analysis
 
     call params_read(par_files)
@@ -120,6 +122,7 @@ contains
     ch = (Bh*dh**3.d0)*half
 
     allocate(b3e(0:domain_nx1*2**(refine_max_level-1),0:domain_nx2*2**(refine_max_level-1)))
+    ! allocate(db3(0:domain_nx1*2**(refine_max_level-1),0:domain_nx2*2**(refine_max_level-1),1:2))
     b3e = 0.d0
 
     if(mhd_energy .and. issolaratm) call inithdstatic
@@ -270,8 +273,11 @@ contains
     double precision :: Avec1(ixI^S,1:ndim)
 
     ! call bipolar_field(ixI^L,ixC^L,xC,Avec1)
-    call wyper2016a_field(ixI^L,ixC^L,xC,Avec1)
-    Avec1(ixC^S,:)=0.d0
+    if (B0field) then
+      Avec1(ixC^S,:)=0.d0
+    else
+      call wyper2016a_field(ixI^L,ixC^L,xC,Avec1)
+    end if
 
     if (idir==3) then
       A(ixC^S)=Avec1(ixC^S,3)
@@ -341,7 +347,6 @@ contains
                     2.d0*cv/((xc1-xv)**2+(xc2-yv)**2+(xc3-zv)**2)**(3./2.)
   
   end subroutine wyper2016a_b3
-
     
   subroutine bipolar_field(ixI^L,ixO^L,x,A,Bbp) 
 
@@ -440,7 +445,7 @@ contains
     ! add STITCH injection of helicity at the bottom cells
     if (s%is_physical_boundary(5)) then
 
-      ! stagger grid index
+      ! point index with range n^D+1
       ixCmin^D=ixOmin^D-1;
       ixCmax^D=ixOmax^D;
 
@@ -470,8 +475,12 @@ contains
         ixB^L=ixC^L+imin^D-nghostcells;
         ixA^L=ixB^L-kr(idim1,^D);
 
-        fE(nghostcells^%3ixC^S,idim1) = fE(nghostcells^%3ixC^S,idim1) - qdt*&
-          (b3e(ixBmin1:ixBmax1,ixBmin2:ixBmax2)-b3e(ixAmin1:ixAmax1,ixAmin2:ixAmax2))
+        fE(nghostcells^%3ixC^S,idim1) = fE(nghostcells^%3ixC^S,idim1) - &
+          qdt*(b3e(ixBmin1:ixBmax1,ixBmin2:ixBmax2)-b3e(ixAmin1:ixAmax1,ixAmin2:ixAmax2))
+        ! if (qt == 0) then
+        !   db3(ixAmin1:ixAmax1,ixAmin2:ixAmax2,idim1) = &
+        !     (b3e(ixBmin1:ixBmax1,ixBmin2:ixBmax2)-b3e(ixAmin1:ixAmax1,ixAmin2:ixAmax2))
+        ! end if
       end do
     end if
 
@@ -904,7 +913,7 @@ contains
     double precision, intent(out)   :: ggrid(ixI^S)
 
     ggrid(ixO^S)=usr_grav*(SRadius/(SRadius+x(ixO^S,3)))**2
-  end subroutine
+  end subroutine getggrav
 
   !==============================================================================
   ! Purpose: get gravity field
@@ -1122,6 +1131,7 @@ contains
 
     if (mype == 0) then
       call write_b3e_binary()
+      ! call write_db3_binary()
     end if
 
   end subroutine my_analysis
@@ -1154,5 +1164,67 @@ contains
     end if
     
   end subroutine write_b3e_binary
+
+  ! subroutine write_db3_binary()
+  !   use mod_global_parameters
+  !   implicit none
+  !   integer :: iunit
+  !   character(len=100) :: filename
+
+  !   ! Only the root process writes the file
+  !   if (mype == 0) then
+  !     filename = 'data/db3.bin'
+  !     iunit = 123  ! Choose an unused unit number
+      
+  !     ! Open binary file
+  !     open(unit=iunit, file=trim(filename), form='unformatted', status='replace', &
+  !          access='stream', action='write')
+      
+  !     ! Write array dimensions first
+  !     write(iunit) size(db3,1), size(db3,2), size(db3,3)
+      
+  !     ! Write the entire array
+  !     write(iunit) db3
+      
+  !     ! Close the file
+  !     close(iunit)
+      
+  !     print *, 'Wrote db3 array to ', trim(filename)
+  !   end if
+    
+  ! end subroutine write_db3_binary
+
+  subroutine my_process_grid(igrid,level,ixI^L,ixO^L,qt,w,x)
+    use mod_global_parameters
+    integer, intent(in)             :: igrid,level,ixI^L,ixO^L
+    double precision, intent(in)    :: qt,x(ixI^S,1:ndim)
+    double precision, intent(inout) :: w(ixI^S,1:nw)
+
+    integer :: ixC^L, idim
+    double precision :: divb(ixI^S)
+    double precision :: divb_max, divb_min, divb_rms
+    integer :: count_nonzero
+
+    ! copied from subroutine get_divb in mod_functions_bfield.t
+    if (stagger_grid) then
+      divb(ixI^S)=0.d0
+      do idim=1,ndim
+        ixC^L=ixO^L-kr(idim,^D);
+        divb(ixO^S)=divb(ixO^S)+block%ws(ixO^S,idim)*block%surfaceC(ixO^S,idim)-&
+                                block%ws(ixC^S,idim)*block%surfaceC(ixC^S,idim)   
+      end do
+      divb(ixO^S)=divb(ixO^S)/block%dvolume(ixO^S)
+    end if
+
+    ! Check if bottom norm vector is all zero
+    if (any(abs(block%ws(nghostcells^%3ixO^S,3)) > 1.0d-6)) then
+      write(*,*) 'Grid:', igrid, 'ws is NOT zero'
+      write(*,*) 'Max value:', maxval(abs(block%ws(nghostcells^%3ixO^S,3)))
+      write(*,*) 'Min value:', minval(abs(block%ws(nghostcells^%3ixO^S,3)))
+    else
+      write(*,*) 'Grid:', igrid, 'ws is ZERO', 'qt', qt
+    end if
+
+  end subroutine my_process_grid
 
 end module mod_usr

@@ -6,20 +6,21 @@
         autoconvert=t
         nwauxio=6
  /
+        base_filename='/scratch/leuven/377/vsc37715/fanspine/output/stitch'
         convert_type='vtuBCCmpi'
 
  &savelist
         itsave(1,1)=0
         itsave(1,2)=0
         dtsave_log=0.01d0
-        dtsave_dat=1.d0
+        dtsave_dat=3.d0
  /
         itsave(1,5)=1
         dtsave_dat=0.5d0
         dtsave_custom=0.05d0
 
  &stoplist
-        time_max=50.d0
+        time_max=30.d0
  /
         time_max=0.0d0
         it_max=1000
@@ -27,7 +28,7 @@
  &methodlist
         time_stepper=  'threestep'
         flux_scheme=    20*'hll'
-        limiter= 20*'wenoz5'
+        limiter= 20*'cada3'
         check_small_values=.true.
  /
         limiter= 20*'cada3'
@@ -45,11 +46,11 @@
  /
 
  &meshlist
-        refine_max_level=5
+        refine_max_level=4
         refine_threshold=20*0.2d0
-        block_nx1=20
-        block_nx2=20
-        block_nx3=20
+        block_nx1=10
+        block_nx2=10
+        block_nx3=10
         domain_nx1=40
         domain_nx2=40
         domain_nx3=40
@@ -60,6 +61,7 @@
         xprobmax2=10.0d0
         xprobmin3=0.d0
         xprobmax3=16.d0
+        ditregrid=3
  /
         w_refine_weight(1)=0.4d0
         w_refine_weight(6)=0.2d0
@@ -108,4 +110,4 @@
         kB = 5.d0
         v0 = 1.d-2
         r2 = 0.04d0
-        zeta0 = 1.d0
+        zeta0 = 0.1d0
