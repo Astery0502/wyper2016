@@ -3,7 +3,7 @@
         base_filename='data/stitch'
         saveprim=.true.
         convert_type='vtuBCCmpi'
-        autoconvert=t
+        autoconvert=f
         nwauxio=6
  /
         base_filename='/scratch/leuven/377/vsc37715/fanspine/output/stitch'
@@ -114,4 +114,4 @@
         kB = 5.d0
         v0 = 1.d-2
         r2 = 0.04d0
-        zeta0 = 0.1d0
+        zeta0 = 0.01d0

@@ -419,6 +419,14 @@ contains
 
   end subroutine bottom_driven_velocity
 
+  subroutine local_zeta(x^D, zeta)
+    double precision, intent(in) :: x^D
+    double precision, intent(out) :: zeta
+
+    zeta = zeta0*cos(half*dpi*(x1-xv+0.5)/12)*cos(half*dpi*(x2-0)/10)
+  
+  end subroutine local_zeta
+
   ! allow user to change inductive electric field, especially for boundary driven applications
   subroutine driven_electric_field(ixI^L,ixO^L,qt,qdt,fE,s)
     use mod_forest, only: igrid_to_node
@@ -428,19 +436,19 @@ contains
     type(state)                        :: s
     double precision, intent(inout)    :: fE(ixI^S,7-2*ndim:3)
 
-    integer :: ixC^L, ix^D, ig^D, imin^D
-    double precision :: xb^D, b3
+    integer :: ixC^L, ix^D, ig^D, imin^D, ixb^D
+    double precision :: xb^D, b3, zeta
 
     integer :: ixA^L
     integer :: ixB^L
     integer :: idim1, idim2
 
-    ! fix Bz at bottom boundary
-    if(s%is_physical_boundary(5)) then
-      ixCmin^D=ixOmin^D-1;
-      ixCmax^D=ixOmax^D;
-      fE(nghostcells^%3ixC^S,1:2)=0.d0
-    end if
+    ! ! fix Bz at bottom boundary
+    ! if(s%is_physical_boundary(5)) then
+    !   ixCmin^D=ixOmin^D-1;
+    !   ixCmax^D=ixOmax^D;
+    !   fE(nghostcells^%3ixC^S,1:2)=0.d0
+    ! end if
 
     ! add STITCH injection of helicity at the bottom cells
     if (s%is_physical_boundary(5)) then
@@ -460,7 +468,11 @@ contains
           do ix2=ixCmin2,ixCmax2
             xb^D=block%x(ix1+1,ix2+1,ixOmin1,^D)-half*block%dx(ix1+1,ix2+1,ixOmin1,^D);
             call wyper2016a_b3(xb^D,b3)
-            b3e(imin1+ix1-nghostcells,imin2+ix2-nghostcells) = b3 * zeta0 ! now for uniform zeta
+            call local_zeta(xb^D, zeta)
+            b3e(imin1+ix1-nghostcells,imin2+ix2-nghostcells) = b3 * zeta ! now for uniform zeta
+            ! ixb^D=(xb^D-xprobmin^D)/((xprobmax^D-xprobmin^D)/domain_nx^D/2**(refine_max_level-1));
+            ! print *, 'ixb1, ixb2, i1, i2', ixb1, ixb2, imin1+ix1-nghostcells, imin2+ix2-nghostcells
+            ! b3e(ixb1,ixb2) = b3*zeta
           end do
         end do
       end if
@@ -1217,12 +1229,10 @@ contains
     end if
 
     ! Check if bottom norm vector is all zero
-    if (any(abs(block%ws(nghostcells^%3ixO^S,3)) > 1.0d-6)) then
+    if (any(abs(block%ws(nghostcells^%3ixO^S,3)) > 1.0d-12)) then
       write(*,*) 'Grid:', igrid, 'ws is NOT zero'
       write(*,*) 'Max value:', maxval(abs(block%ws(nghostcells^%3ixO^S,3)))
       write(*,*) 'Min value:', minval(abs(block%ws(nghostcells^%3ixO^S,3)))
-    else
-      write(*,*) 'Grid:', igrid, 'ws is ZERO', 'qt', qt
     end if
 
   end subroutine my_process_grid
