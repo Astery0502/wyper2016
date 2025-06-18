@@ -15,15 +15,14 @@
         dtsave_log=0.01d0
         dtsave_dat=3.d0
  /
-        itsave(1,5)=1
-        dtsave_dat=0.5d0
+        ditsave_dat=10
+        itsave(1,5)=0
         dtsave_custom=0.05d0
 
  &stoplist
-        time_max=30.d0
+        time_max=30.0d0
  /
-        time_max=0.0d0
-        it_max=1000
+        it_max=10
 
  &methodlist
         time_stepper=  'threestep'
@@ -47,11 +46,11 @@
 
  &meshlist
         refine_max_level=4
-        refine_threshold=20*0.2d0
-        w_refine_weight(1)=0.4d0
-        w_refine_weight(6)=0.2d0
-        w_refine_weight(7)=0.2d0
-        w_refine_weight(8)=0.2d0
+        refine_threshold=20*0.3d0
+        w_refine_weight(1)=0.1d0
+        w_refine_weight(6)=0.3d0
+        w_refine_weight(7)=0.3d0
+        w_refine_weight(8)=0.3d0
         block_nx1=10
         block_nx2=10
         block_nx3=10
@@ -81,6 +80,7 @@
  &paramlist
         typecourant='maxsum'
         courantpar=0.8d0
+        slowsteps=100
  /
 
  &mhd_list
@@ -114,4 +114,4 @@
         kB = 5.d0
         v0 = 1.d-2
         r2 = 0.04d0
-        zeta0 = 0.01d0
+        zeta0 = 0.1d0

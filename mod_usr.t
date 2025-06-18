@@ -18,8 +18,8 @@ module mod_usr
   logical :: isvdriven = .false.
 
   ! stored bottom edge magnetic field b3 
-  double precision, allocatable :: b3e(:,:)
-  ! double precision, allocatable :: db3(:,:,:)
+  double precision, allocatable :: b3_local(:,:)
+  double precision, allocatable :: b3g(:,:)
   double precision :: zeta0
 
 contains
@@ -81,6 +81,10 @@ contains
     double precision :: x0, y0, z0, r0, h, theta, L, Bperp
     integer :: ixp, nphalf
 
+    integer :: nxlmax1, nxlmax2, ix1, ix2
+    double precision :: xlmax1, xlmax2, dxlmax1, dxlmax2
+    double precision :: b3, zeta
+
     !unit_density       = 1.4d0*mass_H*unit_numberdensity               ! 2.341668000000000E-015 g*cm^-3
     !unit_pressure      = 2.3d0*unit_numberdensity*k_B*unit_temperature ! 0.317538000000000 erg*cm^-3
     !unit_magneticfield = dsqrt(miu0*unit_pressure)                     ! 1.99757357615242 Gauss
@@ -121,9 +125,25 @@ contains
     cv = (Bv*dv**3.d0)*half
     ch = (Bh*dh**3.d0)*half
 
-    allocate(b3e(0:domain_nx1*2**(refine_max_level-1),0:domain_nx2*2**(refine_max_level-1)))
-    ! allocate(db3(0:domain_nx1*2**(refine_max_level-1),0:domain_nx2*2**(refine_max_level-1),1:2))
-    b3e = 0.d0
+    nxlmax1 = domain_nx1*2**(refine_max_level-1)
+    nxlmax2 = domain_nx2*2**(refine_max_level-1)
+    dxlmax1 = (xprobmax1-xprobmin1)/dble(nxlmax1)
+    dxlmax2 = (xprobmax2-xprobmin2)/dble(nxlmax2)
+
+    allocate(b3g(0:nxlmax1,0:nxlmax2))
+    b3g = 0.d0
+    if (slab_uniform) then
+      ! calculate b3g at the corner of the bottom boundary
+      do ix1=0,nxlmax1
+        xlmax1 = xprobmin1 + ix1*dxlmax1
+        do ix2=0,nxlmax2
+          xlmax2 = xprobmin2 + ix2*dxlmax2
+          call wyper2016a_b3(xlmax1, xlmax2, xprobmin3, b3)
+          call local_zeta(xlmax1, xlmax2, xprobmin3, zeta)
+          b3g(ix1, ix2) = b3 * zeta
+        end do
+      end do
+    end if
 
     if(mhd_energy .and. issolaratm) call inithdstatic
 
@@ -423,7 +443,7 @@ contains
     double precision, intent(in) :: x^D
     double precision, intent(out) :: zeta
 
-    zeta = zeta0*cos(half*dpi*(x1-xv+0.5)/12)*cos(half*dpi*(x2-0)/10)
+    zeta = zeta0*exp(-2*((x1-xv)**2 + (x2-0)**2))
   
   end subroutine local_zeta
 
@@ -443,12 +463,12 @@ contains
     integer :: ixB^L
     integer :: idim1, idim2
 
-    ! ! fix Bz at bottom boundary
-    ! if(s%is_physical_boundary(5)) then
-    !   ixCmin^D=ixOmin^D-1;
-    !   ixCmax^D=ixOmax^D;
-    !   fE(nghostcells^%3ixC^S,1:2)=0.d0
-    ! end if
+    ! fix Bz at bottom boundary
+    if(s%is_physical_boundary(5)) then
+      ixCmin^D=ixOmin^D-1;
+      ixCmax^D=ixOmax^D;
+      fE(nghostcells^%3ixC^S,1:2)=0.d0
+    end if
 
     ! add STITCH injection of helicity at the bottom cells
     if (s%is_physical_boundary(5)) then
@@ -458,41 +478,37 @@ contains
       ixCmax^D=ixOmax^D;
 
       ! here we use block to point to the state by assuming that ps, ps1, ps2, ps3, ... share the same grid
-      ! get the global index of the block points
+      ! get the global corner index 
       ig^D=igrid_to_node(block%igrid, mype)%node%ig^D;
       imin^D=(ig^D-1)*block_nx^D;
 
-      if (qt == 0) then
-        ! assume the bottom blocks are fully refined
-        do ix1=ixCmin1,ixCmax1
-          do ix2=ixCmin2,ixCmax2
-            xb^D=block%x(ix1+1,ix2+1,ixOmin1,^D)-half*block%dx(ix1+1,ix2+1,ixOmin1,^D);
-            call wyper2016a_b3(xb^D,b3)
-            call local_zeta(xb^D, zeta)
-            b3e(imin1+ix1-nghostcells,imin2+ix2-nghostcells) = b3 * zeta ! now for uniform zeta
-            ! ixb^D=(xb^D-xprobmin^D)/((xprobmax^D-xprobmin^D)/domain_nx^D/2**(refine_max_level-1));
-            ! print *, 'ixb1, ixb2, i1, i2', ixb1, ixb2, imin1+ix1-nghostcells, imin2+ix2-nghostcells
-            ! b3e(ixb1,ixb2) = b3*zeta
-          end do
-        end do
-      end if
+      ! moved to globaldata for mpi synchronization
+      ! if (qt == 0) then
+      ! assume the bottom blocks are fully refined
+      !   do ix1=ixCmin1,ixCmax1
+      !     do ix2=ixCmin2,ixCmax2
+      !       xb^D=block%x(ix1+1,ix2+1,ixOmin1,^D)-half*block%dx(ix1+1,ix2+1,ixOmin1,^D);
+      !       call wyper2016a_b3(xb^D,b3)
+      !       call local_zeta(xb^D, zeta)
+      !       b3g(imin1+ix1-nghostcells,imin2+ix2-nghostcells) = b3 * zeta ! now for uniform zeta
+      !     end do
+      !   end do
+      ! end if
 
       ! add STITCH (Dahlin et al. 2022) helicity inspired driven electric field
       ! direction of line integral of electric field
       do idim1 = 1,2
         idim2 = 3-idim1 
+        ! C for the edge index at idim1 direction
         ixCmax^D=ixOmax^D;
         ixCmin^D=ixOmin^D-kr(idim2,^D);
-        ! global index
+        ! global corner index, A represents for the shift index at idim1 direction
         ixB^L=ixC^L+imin^D-nghostcells;
         ixA^L=ixB^L-kr(idim1,^D);
 
+        ! ith line integral of edge electric field = -(B3|i - B3|i-1) (corner)
         fE(nghostcells^%3ixC^S,idim1) = fE(nghostcells^%3ixC^S,idim1) - &
-          qdt*(b3e(ixBmin1:ixBmax1,ixBmin2:ixBmax2)-b3e(ixAmin1:ixAmax1,ixAmin2:ixAmax2))
-        ! if (qt == 0) then
-        !   db3(ixAmin1:ixAmax1,ixAmin2:ixAmax2,idim1) = &
-        !     (b3e(ixBmin1:ixBmax1,ixBmin2:ixBmax2)-b3e(ixAmin1:ixAmax1,ixAmin2:ixAmax2))
-        ! end if
+          qdt*(b3g(ixBmin1:ixBmax1,ixBmin2:ixBmax2)-b3g(ixAmin1:ixAmax1,ixAmin2:ixAmax2))
       end do
     end if
 
@@ -1142,13 +1158,12 @@ contains
   subroutine my_analysis()
 
     if (mype == 0) then
-      call write_b3e_binary()
-      ! call write_db3_binary()
+      call write_b3g_binary()
     end if
 
   end subroutine my_analysis
 
-  subroutine write_b3e_binary()
+  subroutine write_b3g_binary()
     use mod_global_parameters
     implicit none
     integer :: iunit
@@ -1156,7 +1171,7 @@ contains
 
     ! Only the root process writes the file
     if (mype == 0) then
-      filename = 'data/b3e.bin'
+      filename = 'data/b3g.bin'
       iunit = 123  ! Choose an unused unit number
       
       ! Open binary file
@@ -1164,47 +1179,18 @@ contains
            access='stream', action='write')
       
       ! Write array dimensions first
-      write(iunit) size(b3e,1), size(b3e,2)
+      write(iunit) size(b3g,1), size(b3g,2)
       
       ! Write the entire array
-      write(iunit) b3e
+      write(iunit) b3g
       
       ! Close the file
       close(iunit)
       
-      print *, 'Wrote b3e array to ', trim(filename)
+      print *, 'Wrote b3g array to ', trim(filename)
     end if
     
-  end subroutine write_b3e_binary
-
-  ! subroutine write_db3_binary()
-  !   use mod_global_parameters
-  !   implicit none
-  !   integer :: iunit
-  !   character(len=100) :: filename
-
-  !   ! Only the root process writes the file
-  !   if (mype == 0) then
-  !     filename = 'data/db3.bin'
-  !     iunit = 123  ! Choose an unused unit number
-      
-  !     ! Open binary file
-  !     open(unit=iunit, file=trim(filename), form='unformatted', status='replace', &
-  !          access='stream', action='write')
-      
-  !     ! Write array dimensions first
-  !     write(iunit) size(db3,1), size(db3,2), size(db3,3)
-      
-  !     ! Write the entire array
-  !     write(iunit) db3
-      
-  !     ! Close the file
-  !     close(iunit)
-      
-  !     print *, 'Wrote db3 array to ', trim(filename)
-  !   end if
-    
-  ! end subroutine write_db3_binary
+  end subroutine write_b3g_binary
 
   subroutine my_process_grid(igrid,level,ixI^L,ixO^L,qt,w,x)
     use mod_global_parameters
