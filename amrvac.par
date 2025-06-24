@@ -64,7 +64,7 @@
         xprobmax2=10.0d0
         xprobmin3=0.d0
         xprobmax3=16.d0
-        ditregrid=3
+        ditregrid=20
  /
         w_refine_weight(1)=0.4d0
         w_refine_weight(6)=0.2d0
@@ -80,7 +80,7 @@
  &paramlist
         typecourant='maxsum'
         courantpar=0.8d0
-        slowsteps=100
+        slowsteps=10000
  /
 
  &mhd_list
