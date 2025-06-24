@@ -902,7 +902,7 @@ contains
            !   +4.d0*w(ix3-1^%3ixO^S,mag(:)))
          end do
        end if
-       if(mhd_energy) then
+       if(mhd_energy .and. issolaratm) then
          ixIM^L=ixO^L;
          ixIMmin3=ixOmin3-1;ixIMmax3=ixOmax3;
          call getggrav(tmp1,ixI^L,ixIM^L,x)
