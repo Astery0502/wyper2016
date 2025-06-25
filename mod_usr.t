@@ -1042,6 +1042,11 @@ contains
     if (block%is_physical_boundary(5)) then
       refine=1
       coarsen=-1
+    else if (level == refine_max_level-1) then
+      refine=-1
+      coarsen=0
+    else
+      refine=0
     endif
   end subroutine special_refine_grid
 
