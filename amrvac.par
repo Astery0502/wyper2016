@@ -5,6 +5,7 @@
         convert_type='vtuBCCmpi'
         autoconvert=f
         nwauxio=6
+        slice_type='dat'
  /
         base_filename='/scratch/leuven/377/vsc37715/fanspine/output/stitch'
         convert_type='vtuBCCmpi'
@@ -14,6 +15,16 @@
         itsave(1,2)=0
         dtsave_log=0.01d0
         dtsave_dat=3.d0
+        ! slice save 
+        itsave(1,3)=0
+        dtsave_slice=0.2d0
+        nslices=3
+        slicedir(1)=2
+        slicecoord(1)=0.d0
+        slicedir(2)=3
+        slicecoord(2)=0.8d0 ! same as zh in usr_list
+        slicedir(3)=1
+        slicecoord(3)=-5.d0 ! same as xv in usr_list
  /
         ditsave_dat=10
         itsave(1,5)=0
@@ -54,17 +65,17 @@
         block_nx1=16
         block_nx2=16
         block_nx3=16
-        domain_nx1=48
+        domain_nx1=80
         domain_nx2=48
         domain_nx3=48
         iprob=1
         xprobmin1=-12.0d0
         xprobmax1=8.0d0
-        xprobmin2=-10.0d0
-        xprobmax2=10.0d0
+        xprobmin2=-6.0d0
+        xprobmax2=6.0d0
         xprobmin3=0.d0
-        xprobmax3=20.d0
-        ditregrid=5
+        xprobmax3=12.d0
+        ditregrid=3
  /
         w_refine_weight(1)=0.4d0
         w_refine_weight(6)=0.2d0
@@ -90,6 +101,8 @@
         typedivbfix='ct'
         B0field=.true.
         B0field_forcefree=.true.
+        mhd_trac=.true.
+        mhd_trac_type=1
  /
         B0field=.false.
         B0field_forcefree=.false.
@@ -101,7 +114,7 @@
         mhd_adiab=0.d0
 
  &my_list
-        issolaratm=f
+        issolaratm=t
         isfluxcancel=f
         dh = 4.4d0
         Bh = 8.d0

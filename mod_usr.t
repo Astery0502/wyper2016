@@ -1039,15 +1039,25 @@ contains
     integer, intent(inout) :: refine, coarsen
 
     ! fix the bottom layer to the highest level
-    if (block%is_physical_boundary(5)) then
+    ! if (block%is_physical_boundary(5)) then
+    !   refine=1
+    !   coarsen=-1
+    ! else if (level == refine_max_level-1) then
+    !   refine=-1
+    !   coarsen=0
+    ! else
+    !   refine=0
+    ! endif
+    if(level .ge. 3) then
+      refine=-1
+    endif
+    if(level .eq. refine_max_level) then
+      coarsen=1
+    endif
+    if(any(abs(x(ixO^S,3)) .lt. 0.6d0)) then
       refine=1
       coarsen=-1
-    else if (level == refine_max_level-1) then
-      refine=-1
-      coarsen=0
-    else
-      refine=0
-    endif
+    end if
   end subroutine special_refine_grid
 
   !==============================================================================
