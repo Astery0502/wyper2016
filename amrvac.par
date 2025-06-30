@@ -116,15 +116,20 @@
  &my_list
         issolaratm=t
         isfluxcancel=f
+        ! spine-fan parameters
         dh = 4.4d0
         Bh = 8.d0
         dv = 1.d0
         Bv = 25.d0
         xv = -5.d0
+        ! driven velocity
         ttwist = 10.d0
         Bl = 0.3d0
         Br = 23.d0
         kB = 5.d0
         v0 = 1.d-2
         r2 = 0.04d0
+        ! driven electric field
         zeta0 = 0.1d0
+        izeta = 2
+/

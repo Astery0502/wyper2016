@@ -3,11 +3,11 @@ module mod_usr
   use mod_mhd
   implicit none
   integer, save :: nx1,nx2,nxbc^D
-  integer, parameter :: jmax=8000
+  integer, parameter :: jmax=50000
   double precision, allocatable :: pbc(:),rbc(:)
   ! 1D solar atmosphere table for pressure, density, and height
   double precision :: pa(jmax),ra(jmax),ya(jmax)
-  double precision :: usr_grav,SRadius,rhob,Tiso,dr,gzone,bQ0
+  double precision :: usr_grav,SRadius,rhob,Tiso,dr,gzone,bQ0,heatunit
   double precision :: q_para,d_para,L_para, charge1_x(3), charge2_x(3), charge1, charge2
 
   double precision :: dh, Bh, dv, Bv, xv ! fan-spine parameters
@@ -21,6 +21,7 @@ module mod_usr
   double precision, allocatable :: b3_local(:,:)
   double precision, allocatable :: b3g(:,:)
   double precision :: zeta0
+  integer :: izeta
 
 contains
 
@@ -62,7 +63,8 @@ contains
     character(len=*), intent(in) :: files(:)
     integer                      :: n
  
-    namelist /my_list/ dh, Bh, dv, Bv, xv, ttwist, Bl, Br, kB, v0, r2, zeta0, issolaratm, isfluxcancel
+    namelist /my_list/ dh, Bh, dv, Bv, xv, ttwist, Bl, Br, kB, v0, r2, &
+            zeta0, issolaratm, isfluxcancel, izeta
  
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -90,6 +92,7 @@ contains
     !unit_magneticfield = dsqrt(miu0*unit_pressure)                     ! 1.99757357615242 Gauss
     !unit_velocity      = unit_magneticfield/dsqrt(miu0*unit_density)   ! 1.16448846777562E007 cm/s = 116.45 km/s
     !unit_time          = unit_length/unit_velocity                     ! 85.8746159942810 s 
+    heatunit=unit_pressure/unit_time !< 3.697693390805347E-003 erg*cm^-3/s
     if(.not.mhd_energy) then
       ! bottom density
       rhob=2.d0
@@ -101,7 +104,7 @@ contains
 
     bQ0=1.d-4/unit_pressure*unit_time          ! 3.697693390805347E-003 erg*cm^-3/s
 
-    gzone=2.d8/unit_length
+    gzone=0.5d0
     ! cell size in 1D solar atmosphere table
     dr=(2.d0*gzone+xprobmax3-xprobmin3)/dble(jmax)
     usr_grav=-2.74d4*unit_length/unit_velocity**2  ! solar gravity
@@ -149,8 +152,69 @@ contains
 
   end subroutine initglobaldata_usr
 
-  !> initialize solar atmosphere table in a vertical line through the global domain
+  !> hd static from yuhao's ffhd, wider transition region and fixed density at fixed height: hflag and rpho
   subroutine inithdstatic
+    ! use mod_ionization
+    integer :: j,na,nb,ibc,flag
+    double precision:: rpho,Tcor,Tpho,wtra,res,rhob,pb,htra,Ttr,Fc,invT,kappa,hflag
+    double precision, allocatable :: Ta(:),gg(:)
+
+    Tcor=1.d0
+    Tpho=1.3d-2
+    htra=0.6d0
+    wtra=0.05d0
+    rpho=0.5d0
+    hflag=2.d0
+    Fc=2.d5/heatunit/unit_length
+    kappa=8.d-7*unit_temperature**3.5d0/unit_length/unit_density/unit_velocity**3
+    allocate(Ta(jmax),gg(jmax))
+    do j=1,jmax
+      ya(j)=(dble(j)-0.5d0)*dr-gzone
+      if(ya(j)<hflag) then
+        flag=j
+      end if
+      if(ya(j)>=htra) then
+        Ta(j)=(3.5d0*Fc/kappa*(ya(j)-htra)+Tcor**3.5d0)**(2.d0/7.d0)
+      else
+        Ta(j)=Tpho+0.5d0*(Tcor-Tpho)*(1.d0+tanh((ya(j)-htra)/wtra))
+      end if
+      gg(j)=usr_grav*(SRadius/(SRadius+ya(j)))**2
+    end do
+    nb=int((gzone+hflag)/dr)
+    ra(nb)=rpho
+    pa(nb)=rpho*Ta(nb)
+    ! if(ffhd_ionization) call ion_get_density(pa(nb),Ta(nb),ra(nb))
+    invT=0.d0
+    do j=nb+1,jmax
+      invT=invT+(gg(j)/Ta(j)+gg(j-1)/Ta(j-1))*0.5d0
+      pa(j)=pa(nb)*dexp(invT*dr)
+      ra(j)=pa(j)/Ta(j)
+      ! if(ffhd_ionization) call ion_get_density(pa(j),Ta(j),ra(j))
+    enddo
+    invT=0.d0
+    do j=nb-1,1,-1
+      invT=invT-(gg(j)/Ta(j)+gg(j+1)/Ta(j+1))*0.5d0
+      pa(j)=pa(nb)*dexp(invT*dr)
+      ra(j)=pa(j)/Ta(j)
+      ! if(ffhd_ionization) call ion_get_density(pa(j),Ta(j),ra(j))
+    enddo
+    na=floor(gzone/dr+0.5d0)
+    res=gzone-(dble(na)-0.5d0)*dr
+    rhob=ra(na)+res/dr*(ra(na+1)-ra(na))
+    pb=pa(na)+res/dr*(pa(na+1)-pa(na))
+    allocate(rbc(nghostcells))
+    allocate(pbc(nghostcells))
+    do ibc=nghostcells,1,-1
+      na=floor((gzone-dx(3,refine_max_level)*(dble(nghostcells-ibc+1)-0.5d0))/dr+0.5d0)
+      res=gzone-dx(3,refine_max_level)*(dble(nghostcells-ibc+1)-0.5d0)-(dble(na)-0.5d0)*dr
+      rbc(ibc)=ra(na)+(one-cos(dpi*res/dr))/two*(ra(na+1)-ra(na))
+      pbc(ibc)=pa(na)+(one-cos(dpi*res/dr))/two*(pa(na+1)-pa(na))
+    end do
+    deallocate(gg,Ta)
+  end subroutine inithdstatic
+
+  !> initialize solar atmosphere table in a vertical line through the global domain
+  subroutine inithdstatic_old
     use mod_global_parameters
 
     double precision :: Ta(jmax),gg(jmax)
@@ -216,7 +280,7 @@ contains
      print*,'pb',pb
     endif
 
-  end subroutine inithdstatic
+  end subroutine inithdstatic_old
 
   subroutine initonegrid_usr(ixI^L,ixO^L,w,x)
 
@@ -232,7 +296,7 @@ contains
 
     if(first)then
       if(mype==0) then
-      write(*,*)'Fan-spine field from Wyper2016a, now isothermal'
+      write(*,*)'Fan-spine field from Wyper2016a'
       write(*,*)'B0field', B0field
       write(*,*)'nghostcells', nghostcells
     endif
@@ -443,7 +507,14 @@ contains
     double precision, intent(in) :: x^D
     double precision, intent(out) :: zeta
 
-    zeta = zeta0*exp(-2*((x1-xv)**2 + (x2-0)**2))
+    select case (izeta)
+    case (1)
+      zeta = zeta0*exp(-2*((x1-xv)**2 + (x2-0)**2))
+    case (2)
+      zeta = zeta0*cos(half*dpi*(x1-xv)/6.d0)*cos(half*dpi*(x2-0)/6.d0)
+    case default
+      call mpistop("this izeta not supported")
+    end select
   
   end subroutine local_zeta
 
@@ -1038,16 +1109,6 @@ contains
     double precision, intent(in) :: qt, w(ixI^S,1:nw), x(ixI^S,1:ndim)
     integer, intent(inout) :: refine, coarsen
 
-    ! fix the bottom layer to the highest level
-    ! if (block%is_physical_boundary(5)) then
-    !   refine=1
-    !   coarsen=-1
-    ! else if (level == refine_max_level-1) then
-    !   refine=-1
-    !   coarsen=0
-    ! else
-    !   refine=0
-    ! endif
     if(level .ge. 3) then
       refine=-1
     endif
