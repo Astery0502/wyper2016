@@ -11,18 +11,18 @@
         convert_type='vtuBCCmpi'
 
  &savelist
-        itsave(1,1)=0
-        itsave(1,2)=0
-        dtsave_log=0.01d0
-        dtsave_dat=3.d0
+        !itsave(1,1)=0
+        !itsave(1,2)=0
+        dtsave_log=1.d-3
+        dtsave_dat=2.d0
         ! slice save 
         itsave(1,3)=0
-        dtsave_slice=0.2d0
+        dtsave_slice=1.d-2
         nslices=3
         slicedir(1)=2
         slicecoord(1)=0.d0
         slicedir(2)=3
-        slicecoord(2)=0.8d0 ! same as zh in usr_list
+        slicecoord(2)=0.0d0 ! not same as zh in usr_list
         slicedir(3)=1
         slicecoord(3)=-5.d0 ! same as xv in usr_list
  /
@@ -31,14 +31,14 @@
         dtsave_custom=0.05d0
 
  &stoplist
-        time_max=30.0d0
+        time_max=2.0d0
  /
         it_max=10
 
  &methodlist
         time_stepper=  'threestep'
-        flux_scheme=    20*'hll'
-        limiter= 20*'cada3'
+        flux_scheme=    20*'hlld'
+        limiter= 20*'wenoz5'
         check_small_values=.true.
  /
         limiter= 20*'cada3'
@@ -56,18 +56,18 @@
  /
 
  &meshlist
-        refine_max_level=4
+        refine_max_level=5
         refine_threshold=20*0.3d0
         w_refine_weight(1)=0.1d0
         w_refine_weight(6)=0.3d0
         w_refine_weight(7)=0.3d0
         w_refine_weight(8)=0.3d0
-        block_nx1=16
-        block_nx2=16
-        block_nx3=16
-        domain_nx1=80
-        domain_nx2=48
-        domain_nx3=48
+        block_nx1=12
+        block_nx2=12
+        block_nx3=12
+        domain_nx1=60
+        domain_nx2=36
+        domain_nx3=36
         iprob=1
         xprobmin1=-12.0d0
         xprobmax1=8.0d0
@@ -91,7 +91,7 @@
  &paramlist
         typecourant='maxsum'
         courantpar=0.8d0
-        slowsteps=10000
+        slowsteps=1000
  /
 
  &mhd_list
@@ -103,6 +103,7 @@
         B0field_forcefree=.true.
         mhd_trac=.true.
         mhd_trac_type=1
+        mhd_trac_mask=1.d0
  /
         B0field=.false.
         B0field_forcefree=.false.
@@ -123,7 +124,7 @@
         Bv = 25.d0
         xv = -5.d0
         ! driven velocity
-        ttwist = 10.d0
+        ttwist = 30.d0
         Bl = 0.3d0
         Br = 23.d0
         kB = 5.d0

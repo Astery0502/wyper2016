@@ -11,7 +11,7 @@ module mod_usr
   double precision :: q_para,d_para,L_para, charge1_x(3), charge2_x(3), charge1, charge2
 
   double precision :: dh, Bh, dv, Bv, xv ! fan-spine parameters
-  double precision :: ttwist, Bl, Br, kB, v0, cv, ch, r2
+  double precision :: ttwist, Bl, Br, kB, v0, cv, ch, r2, htra
 
   logical :: isfluxcancel = .false.
   logical :: issolaratm = .true.
@@ -148,15 +148,15 @@ contains
       end do
     end if
 
-    if(mhd_energy .and. issolaratm) call inithdstatic
+    if(mhd_energy .and. issolaratm) call inithdstatic_old
 
   end subroutine initglobaldata_usr
 
   !> hd static from yuhao's ffhd, wider transition region and fixed density at fixed height: hflag and rpho
-  subroutine inithdstatic
+  subroutine inithdstatic_new
     ! use mod_ionization
     integer :: j,na,nb,ibc,flag
-    double precision:: rpho,Tcor,Tpho,wtra,res,rhob,pb,htra,Ttr,Fc,invT,kappa,hflag
+    double precision:: rpho,Tcor,Tpho,wtra,res,rhob,pb,Ttr,Fc,invT,kappa,hflag
     double precision, allocatable :: Ta(:),gg(:)
 
     Tcor=1.d0
@@ -211,14 +211,14 @@ contains
       pbc(ibc)=pa(na)+(one-cos(dpi*res/dr))/two*(pa(na+1)-pa(na))
     end do
     deallocate(gg,Ta)
-  end subroutine inithdstatic
+  end subroutine inithdstatic_new
 
   !> initialize solar atmosphere table in a vertical line through the global domain
   subroutine inithdstatic_old
     use mod_global_parameters
 
     double precision :: Ta(jmax),gg(jmax)
-    double precision :: rpho,Tpho,Ttop,htra,wtra,ftra,Ttr,Fc,k_para
+    double precision :: rpho,Tpho,Ttop,wtra,ftra,Ttr,Fc,k_para
     double precision :: res,pb,rhob,invT
     integer :: j,na,ibc,btlevel
 
@@ -1115,7 +1115,7 @@ contains
     if(level .eq. refine_max_level) then
       coarsen=1
     endif
-    if(any(abs(x(ixO^S,3)) .lt. 0.6d0)) then
+    if(any(abs(x(ixO^S,3)) .lt. htra)) then
       refine=1
       coarsen=-1
     end if
