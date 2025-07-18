@@ -11,7 +11,9 @@ module mod_usr
   double precision :: q_para,d_para,L_para, charge1_x(3), charge2_x(3), charge1, charge2
 
   double precision :: dh, Bh, dv, Bv, xv ! fan-spine parameters
-  double precision :: ttwist, Bl, Br, kB, v0, cv, ch, r2, htra
+  double precision :: Bl, Br, kB, v0, cv, ch, r2, htra
+  double precision :: trelax, ttwist
+  double precision :: R0, rm, A
 
   logical :: isfluxcancel = .false.
   logical :: issolaratm = .true.
@@ -63,8 +65,9 @@ contains
     character(len=*), intent(in) :: files(:)
     integer                      :: n
  
-    namelist /my_list/ dh, Bh, dv, Bv, xv, ttwist, Bl, Br, kB, v0, r2, &
-            zeta0, issolaratm, isfluxcancel, izeta
+    namelist /my_list/ dh, Bh, dv, Bv, xv, Bl, Br, kB, v0, r2, &
+            zeta0, issolaratm, isfluxcancel, izeta, trelax, ttwist, &
+            R0, rm, A
  
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -148,7 +151,7 @@ contains
       end do
     end if
 
-    if(mhd_energy .and. issolaratm) call inithdstatic_old
+    if(mhd_energy .and. issolaratm) call inithdstatic_new
 
   end subroutine initglobaldata_usr
 
@@ -512,11 +515,42 @@ contains
       zeta = zeta0*exp(-2*((x1-xv)**2 + (x2-0)**2))
     case (2)
       zeta = zeta0*cos(half*dpi*(x1-xv)/6.d0)*cos(half*dpi*(x2-0)/6.d0)
+    case (3)
+      zeta = radial_bump(x1, x2, R0, rm, A) ! R, r0, A to be specified 
     case default
       call mpistop("this izeta not supported")
     end select
   
   end subroutine local_zeta
+
+  function radial_bump(x1, x2, R, r0, A)
+    double precision, intent(in) :: x1, x2, R, r0, A
+    double precision :: radial_bump
+
+    double precision :: r_norm, exponent1, exponent2, r1, r0_norm, gamma
+
+    r1 = sqrt(x1**2 + x2**2)
+    r0_norm = r0/R
+    r_norm = r1/R
+    gamma = max(1.d0/r0_norm, 1.d0/(1-r0_norm))
+    exponent1 = gamma * r0_norm
+    exponent2 = gamma * (1 - r0_norm)
+
+    radial_bump = A * (r_norm ** exponent1) * ((1 - r_norm) ** exponent2)
+    if (r1 > R) radial_bump = 0
+  end function radial_bump
+
+  function zeta_t(qt)
+    double precision, intent(in) :: qt
+    double precision :: zeta_t
+
+    if (qt < trelax) then
+      zeta_t = 0
+    else
+      zeta_t = 1/(1+exp(-(qt-trelax-ttwist)))
+    end if
+
+  end function zeta_t
 
   ! allow user to change inductive electric field, especially for boundary driven applications
   subroutine driven_electric_field(ixI^L,ixO^L,qt,qdt,fE,s)
@@ -579,7 +613,7 @@ contains
 
         ! ith line integral of edge electric field = -(B3|i - B3|i-1) (corner)
         fE(nghostcells^%3ixC^S,idim1) = fE(nghostcells^%3ixC^S,idim1) - &
-          qdt*(b3g(ixBmin1:ixBmax1,ixBmin2:ixBmax2)-b3g(ixAmin1:ixAmax1,ixAmin2:ixAmax2))
+          qdt*(b3g(ixBmin1:ixBmax1,ixBmin2:ixBmax2)-b3g(ixAmin1:ixAmax1,ixAmin2:ixAmax2))*zeta_t(qt)
       end do
     end if
 
@@ -980,9 +1014,9 @@ contains
          ixIMmin3=ixOmin3-1;ixIMmax3=ixOmin3-1;
          call mhd_get_pthermal(w,x,ixI^L,ixIM^L,pth)
          pth(ixOmin3-1^%3ixO^S)=pth(ixOmin3-1^%3ixO^S)/w(ixOmin3-1^%3ixO^S,rho_)
-         where(pth(ixOmin3-1^%3ixO^S)<1.618d0)
-           pth(ixOmin3-1^%3ixO^S)=1.618d0
-         end where
+        !  where(pth(ixOmin3-1^%3ixO^S)<1.618d0)
+        !    pth(ixOmin3-1^%3ixO^S)=1.618d0
+        !  end where
          tmp2=0.d0
          do ix3=ixOmin3,ixOmax3
            tmp2(ixOmin3^%3ixO^S)=tmp2(ixOmin3^%3ixO^S)+0.5d0*(tmp1(ix3-1^%3ixO^S)+tmp1(ix3^%3ixO^S))/pth(ixOmin3-1^%3ixO^S)
