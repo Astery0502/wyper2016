@@ -302,6 +302,7 @@ contains
       write(*,*)'Fan-spine field from Wyper2016a'
       write(*,*)'B0field', B0field
       write(*,*)'nghostcells', nghostcells
+      write(*,*)'izeta', izeta
     endif
       first=.false.
     endif
@@ -510,9 +511,14 @@ contains
     double precision, intent(in) :: x^D
     double precision, intent(out) :: zeta
 
+    double precision :: rv
+    rv = sqrt((x1-xv)**2 + (x2-0.d0)**2)
+
     select case (izeta)
+    case (0)
+      zeta = zeta0
     case (1)
-      zeta = zeta0*exp(-2*((x1-xv)**2 + (x2-0)**2))
+      zeta = zeta0*exp(-2*rv**2)
     case (2)
       zeta = zeta0*cos(half*dpi*(x1-xv)/6.d0)*cos(half*dpi*(x2-0)/6.d0)
     case (3)
@@ -529,7 +535,7 @@ contains
 
     double precision :: r_norm, exponent1, exponent2, r1, r0_norm, gamma
 
-    r1 = sqrt(x1**2 + x2**2)
+    r1 = sqrt((x1-xv)**2 + x2**2)
     r0_norm = r0/R
     r_norm = r1/R
     gamma = max(1.d0/r0_norm, 1.d0/(1-r0_norm))
