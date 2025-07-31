@@ -3,27 +3,25 @@ module mod_usr
   use mod_mhd
   implicit none
   integer, save :: nx1,nx2,nxbc^D
-  integer, parameter :: jmax=50000
+  integer, parameter :: jmax=5000
   double precision, allocatable :: pbc(:),rbc(:)
   ! 1D solar atmosphere table for pressure, density, and height
   double precision :: pa(jmax),ra(jmax),ya(jmax)
   double precision :: usr_grav,SRadius,rhob,Tiso,dr,gzone,bQ0,heatunit
-  double precision :: q_para,d_para,L_para, charge1_x(3), charge2_x(3), charge1, charge2
 
   double precision :: dh, Bh, dv, Bv, xv ! fan-spine parameters
-  double precision :: Bl, Br, kB, v0, cv, ch, r2, htra
-  double precision :: trelax, ttwist
-  double precision :: R0, rm, A
-
-  logical :: isfluxcancel = .false.
-  logical :: issolaratm = .true.
-  logical :: isvdriven = .false.
+  double precision :: Bl, Br, cv, ch, htra
+  double precision :: trelax, tstop
+  double precision :: rm, zfac
 
   ! stored bottom edge magnetic field b3 
   double precision, allocatable :: b3_local(:,:)
   double precision, allocatable :: b3g(:,:)
   double precision :: zeta0
   integer :: izeta
+
+  ! set aux output variables ma1, ma2, ma3 in B0field case
+  integer :: i_b1, i_b2, i_b3
 
 contains
 
@@ -49,6 +47,7 @@ contains
     usr_set_electric_field => driven_electric_field
     usr_set_B0          => specialset_B0
     usr_set_J0          => specialset_J0
+    ! usr_modify_output => set_output_vars
 
     ! usr_process_grid    => my_process_grid 
     ! usr_write_analysis  => my_analysis
@@ -57,6 +56,9 @@ contains
     call set_coordinate_system("Cartesian_3D")
     call mhd_activate()
 
+    i_b1 = var_set_extravar("mag1","mag1")
+    i_b2 = var_set_extravar("mag2","mag2")
+    i_b3 = var_set_extravar("mag3","mag3")
   end subroutine usr_init
 
   !> Read parameters from a file
@@ -65,9 +67,8 @@ contains
     character(len=*), intent(in) :: files(:)
     integer                      :: n
  
-    namelist /my_list/ dh, Bh, dv, Bv, xv, Bl, Br, kB, v0, r2, &
-            zeta0, issolaratm, isfluxcancel, izeta, trelax, ttwist, &
-            R0, rm, A
+    namelist /my_list/ dh, Bh, dv, Bv, xv, &
+            zeta0, izeta, trelax, tstop, rm, zfac
  
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -76,7 +77,6 @@ contains
     end do
  
   end subroutine params_read
-
 
   !==============================================================================
   ! Purpose: to initialize user public parameters and reset global parameters.
@@ -102,31 +102,14 @@ contains
       ! isothermal uniform temperature
       Tiso= mhd_adiab
     end if
-    rhob=2.d0
-    Tiso = 1.d0
 
     bQ0=1.d-4/unit_pressure*unit_time          ! 3.697693390805347E-003 erg*cm^-3/s
 
-    gzone=0.5d0
+    gzone=0.2d0+xprobmin3
     ! cell size in 1D solar atmosphere table
     dr=(2.d0*gzone+xprobmax3-xprobmin3)/dble(jmax)
     usr_grav=-2.74d4*unit_length/unit_velocity**2  ! solar gravity
     SRadius=6.955d10/unit_length                   ! Solar radius
-
-    !q_para=7.d19/(unit_magneticfield*unit_length**2) ! strength and sign of magnetic charges
-    q_para=Busr*2.10025d18/(unit_magneticfield*unit_length**2) ! strength and sign of magnetic charges
-    d_para=1.d9/unit_length ! depth of magnetic charges
-    L_para=1.5d9/unit_length ! half distance between magnetic charges
-
-    charge1=-q_para
-    charge1_x(1)=-L_para
-    charge1_x(2)=0.d0
-    charge1_x(3)=-d_para
-
-    charge2=q_para
-    charge2_x(1)=L_para
-    charge2_x(2)=0.d0
-    charge2_x(3)=-d_para
 
     cv = (Bv*dv**3.d0)*half
     ch = (Bh*dh**3.d0)*half
@@ -151,73 +134,11 @@ contains
       end do
     end if
 
-    if(mhd_energy .and. issolaratm) call inithdstatic_new
-
+    if(mhd_energy) call inithdstatic
   end subroutine initglobaldata_usr
 
-  !> hd static from yuhao's ffhd, wider transition region and fixed density at fixed height: hflag and rpho
-  subroutine inithdstatic_new
-    ! use mod_ionization
-    integer :: j,na,nb,ibc,flag
-    double precision:: rpho,Tcor,Tpho,wtra,res,rhob,pb,Ttr,Fc,invT,kappa,hflag
-    double precision, allocatable :: Ta(:),gg(:)
-
-    Tcor=1.d0
-    Tpho=1.3d-2
-    htra=0.6d0
-    wtra=0.05d0
-    rpho=0.5d0
-    hflag=2.d0
-    Fc=2.d5/heatunit/unit_length
-    kappa=8.d-7*unit_temperature**3.5d0/unit_length/unit_density/unit_velocity**3
-    allocate(Ta(jmax),gg(jmax))
-    do j=1,jmax
-      ya(j)=(dble(j)-0.5d0)*dr-gzone
-      if(ya(j)<hflag) then
-        flag=j
-      end if
-      if(ya(j)>=htra) then
-        Ta(j)=(3.5d0*Fc/kappa*(ya(j)-htra)+Tcor**3.5d0)**(2.d0/7.d0)
-      else
-        Ta(j)=Tpho+0.5d0*(Tcor-Tpho)*(1.d0+tanh((ya(j)-htra)/wtra))
-      end if
-      gg(j)=usr_grav*(SRadius/(SRadius+ya(j)))**2
-    end do
-    nb=int((gzone+hflag)/dr)
-    ra(nb)=rpho
-    pa(nb)=rpho*Ta(nb)
-    ! if(ffhd_ionization) call ion_get_density(pa(nb),Ta(nb),ra(nb))
-    invT=0.d0
-    do j=nb+1,jmax
-      invT=invT+(gg(j)/Ta(j)+gg(j-1)/Ta(j-1))*0.5d0
-      pa(j)=pa(nb)*dexp(invT*dr)
-      ra(j)=pa(j)/Ta(j)
-      ! if(ffhd_ionization) call ion_get_density(pa(j),Ta(j),ra(j))
-    enddo
-    invT=0.d0
-    do j=nb-1,1,-1
-      invT=invT-(gg(j)/Ta(j)+gg(j+1)/Ta(j+1))*0.5d0
-      pa(j)=pa(nb)*dexp(invT*dr)
-      ra(j)=pa(j)/Ta(j)
-      ! if(ffhd_ionization) call ion_get_density(pa(j),Ta(j),ra(j))
-    enddo
-    na=floor(gzone/dr+0.5d0)
-    res=gzone-(dble(na)-0.5d0)*dr
-    rhob=ra(na)+res/dr*(ra(na+1)-ra(na))
-    pb=pa(na)+res/dr*(pa(na+1)-pa(na))
-    allocate(rbc(nghostcells))
-    allocate(pbc(nghostcells))
-    do ibc=nghostcells,1,-1
-      na=floor((gzone-dx(3,refine_max_level)*(dble(nghostcells-ibc+1)-0.5d0))/dr+0.5d0)
-      res=gzone-dx(3,refine_max_level)*(dble(nghostcells-ibc+1)-0.5d0)-(dble(na)-0.5d0)*dr
-      rbc(ibc)=ra(na)+(one-cos(dpi*res/dr))/two*(ra(na+1)-ra(na))
-      pbc(ibc)=pa(na)+(one-cos(dpi*res/dr))/two*(pa(na+1)-pa(na))
-    end do
-    deallocate(gg,Ta)
-  end subroutine inithdstatic_new
-
   !> initialize solar atmosphere table in a vertical line through the global domain
-  subroutine inithdstatic_old
+  subroutine inithdstatic
     use mod_global_parameters
 
     double precision :: Ta(jmax),gg(jmax)
@@ -230,16 +151,15 @@ contains
     Ttop=1.5d6/unit_temperature ! estimated temperature in the top
     htra=2.d8/unit_length ! height of initial transition region
     wtra=2.d7/unit_length ! width of initial transition region 
-    htra=2.d8/unit_length ! height of initial transition region
-    wtra=0.2d8/unit_length! width of initial transition region 
     Ttr=1.6d5/unit_temperature ! lowest temperature of upper profile
     Fc=2.d5/unit_pressure/unit_velocity  ! constant thermal conduction flux
     ftra=wtra*atanh(2.d0*(Ttr-Tpho)/(Ttop-Tpho)-1.d0)
     ! Spitzer thermal conductivity with cgs units
     k_para=8.d-7*unit_temperature**3.5d0/unit_length/unit_density/unit_velocity**3 
+
     !! set T distribution with height
     do j=1,jmax
-       ya(j)=(dble(j)-0.5d0)*dr-gzone
+       ya(j)=(dble(j)-0.5d0)*dr+xprobmin3-gzone
        if(ya(j)>htra) then
          Ta(j)=(3.5d0*Fc/k_para*(ya(j)-htra)+Ttr**3.5d0)**(2.d0/7.d0)
        else
@@ -250,17 +170,13 @@ contains
     !! solution of hydrostatic equation 
     ra(1)=rpho
     pa(1)=rpho*Tpho
-    !invT=0.d0
-    !do j=2,jmax
-    !   invT=invT+(gg(j)/Ta(j)+gg(j-1)/Ta(j-1))*0.5d0
-    !   pa(j)=pa(1)*dexp(invT*dr)
-    !   ra(j)=pa(j)/Ta(j)
-    !end do
+
     do j=2,jmax
        pa(j)=(pa(j-1)+dr*(gg(j)+gg(j-1))*ra(j-1)/4.d0)/(one-dr*(gg(j)+gg(j-1))/&
               Ta(j)/4.d0)
        ra(j)=pa(j)/Ta(j)
     end do
+
     !! initialized rho and p in the fixed bottom boundary
     na=floor(gzone/dr+0.5d0)
     res=gzone-(dble(na)-0.5d0)*dr
@@ -282,8 +198,7 @@ contains
      print*,'rhob',rhob
      print*,'pb',pb
     endif
-
-  end subroutine inithdstatic_old
+  end subroutine inithdstatic
 
   subroutine initonegrid_usr(ixI^L,ixO^L,w,x)
 
@@ -309,33 +224,25 @@ contains
 
     if(B0field) then
       w(ixO^S,mag(:))=zero
-    else 
-      if(stagger_grid) then
-        call b_from_vector_potential(block%ixGs^L,ixI^L,ixO^L,block%ws,x)
-        call mhd_face_to_center(ixO^L,block)
-      else
-        ! call bipolar_field(ixI^L,ixO^L,x,A,Bfr)
-        call wyper2016a_field(ixI^L,ixO^L,x,A,Bfr)
-        w(ixO^S,mag(:))=Bfr(ixO^S,:)
-      end if
+    else
+      call wyper2016a_field(ixI^L,ixO^L,x,A,Bfr)
+      w(ixO^S,mag(:))=Bfr(ixO^S,:)
     end if
+
+    if(stagger_grid) then
+      call b_from_vector_potential(block%ixGs^L,ixI^L,ixO^L,block%ws,x)
+      call mhd_face_to_center(ixO^L,block)
+    end if
+
     w(ixO^S,mom(:))=0.d0
 
-    if(mhd_energy .and. issolaratm) then
+    if(mhd_energy) then
       {do ix^DB=ixOmin^DB,ixOmax^DB\}
          na=floor((x(ix^D,3)-xprobmin3+gzone)/dr+0.5d0)
          res=x(ix^D,3)-xprobmin3+gzone-(dble(na)-0.5d0)*dr
          w(ix^D,rho_)=ra(na)+(one-cos(dpi*res/dr))/two*(ra(na+1)-ra(na))
          w(ix^D,p_)  =pa(na)+(one-cos(dpi*res/dr))/two*(pa(na+1)-pa(na))
       {end do\}
-    else if (mhd_energy .and. .not. issolaratm .and. .not. mhd_gravity) then
-      if (mype==0) then
-        stop 'mhd_gravity and .not. issolaratm are not compatible'
-      end if
-    else if (mhd_energy .and. .not. issolaratm .and. mhd_gravity) then
-      w(ixO^S,rho_)=rhob*dexp(usr_grav*SRadius**2/Tiso*&
-                    (1.d0/SRadius-1.d0/(x(ixO^S,3)+SRadius)))
-      w(ixO^S,p_)  =w(ixO^S,rho_)*Tiso
     else if(mhd_adiab/=0) then
       ! isothermal
       w(ixO^S,rho_)=rhob*dexp(usr_grav*SRadius**2/Tiso*&
@@ -435,39 +342,6 @@ contains
                     2.d0*cv/((xc1-xv)**2+(xc2-yv)**2+(xc3-zv)**2)**(3./2.)
   
   end subroutine wyper2016a_b3
-    
-  subroutine bipolar_field(ixI^L,ixO^L,x,A,Bbp) 
-
-    integer, intent(in)             :: ixI^L,ixO^L
-    double precision, intent(in)    :: x(ixI^S,1:ndim)
-    ! vector potential
-    double precision, intent(out)   :: A(ixI^S,1:ndim)
-    ! magnetic field
-    double precision, optional, intent(out)   :: Bbp(ixI^S,1:ndir)
-
-    double precision :: tmp(ixO^S),f1(ixO^S),f2(ixO^S)
-
-    A(ixO^S,1)=0.d0
-    f1(ixO^S)=(x(ixO^S,1)-charge1_x(1))/(sqrt((x(ixO^S,1)-charge1_x(1))**2+(x(ixO^S,2)-charge1_x(2))**2+&
-              (x(ixO^S,3)-charge1_x(3))**2)*((x(ixO^S,2)-charge1_x(2))**2+(x(ixO^S,3)-charge1_x(3))**2))
-    f2(ixO^S)=(x(ixO^S,1)-charge2_x(1))/(sqrt((x(ixO^S,1)-charge2_x(1))**2+(x(ixO^S,2)-charge2_x(2))**2+&
-              (x(ixO^S,3)-charge2_x(3))**2)*((x(ixO^S,2)-charge2_x(2))**2+(x(ixO^S,3)-charge2_x(3))**2))
-    A(ixO^S,2)=charge1*(x(ixO^S,3)-charge1_x(3))*f1(ixO^S)+charge2*(x(ixO^S,3)-charge2_x(3))*f2(ixO^S)
-    A(ixO^S,3)=-charge1*(x(ixO^S,2)-charge1_x(2))*f1(ixO^S)-charge2*(x(ixO^S,2)-charge2_x(2))*f2(ixO^S)
-
-    if(present(Bbp)) then
-      tmp(ixO^S)=-sqrt((x(ixO^S,1)-charge1_x(1))**2+(x(ixO^S,2)-charge1_x(2))**2+(x(ixO^S,3)-charge1_x(3))**2)**3
-      Bbp(ixO^S,1)=(x(ixO^S,1)-charge1_x(1))/tmp(ixO^S)
-      Bbp(ixO^S,2)=(x(ixO^S,2)-charge1_x(2))/tmp(ixO^S)
-      Bbp(ixO^S,3)=(x(ixO^S,3)-charge1_x(3))/tmp(ixO^S)
-      tmp(ixO^S)=sqrt((x(ixO^S,1)-charge2_x(1))**2+(x(ixO^S,2)-charge2_x(2))**2+(x(ixO^S,3)-charge2_x(3))**2)**3
-      Bbp(ixO^S,1)=Bbp(ixO^S,1)+(x(ixO^S,1)-charge2_x(1))/tmp(ixO^S)
-      Bbp(ixO^S,2)=Bbp(ixO^S,2)+(x(ixO^S,2)-charge2_x(2))/tmp(ixO^S)
-      Bbp(ixO^S,3)=Bbp(ixO^S,3)+(x(ixO^S,3)-charge2_x(3))/tmp(ixO^S)
-      Bbp(ixO^S,:)=q_para*Bbp(ixO^S,:)
-    end if
-
-  end subroutine bipolar_field
 
   subroutine bottom_driven_velocity(x^D, qt, vdriven)
     double precision, intent(in) :: x^D
@@ -480,18 +354,11 @@ contains
     c1 = Bh*dh**3*half
     c2 = Bv*dv**3*half
 
-    ft = half*(1-cos(2*dpi*(qt/ttwist)))
+    ft = half*(1-cos(2*dpi*(qt/tstop)))
 
     xh = 0; yh = 0; zh = -dh; yv = 0; zv = -dv
     lh = (x1-xh)**2+(x2-yh)**2+(x3-zh)**2
     lv = (x1-xv)**2+(x2-yv)**2+(x3-zv)**2
-
-    if (isfluxcancel) then
-      vdriven(1) = v0*sin(2*dpi*qt/ttwist)**2*exp(-((x1-xv)**2+(x2-yv)**2)/r2)
-      ! vdriven(1) = v0*exp(-((x1-xv)**2+(x2-yv)**2)/r2)
-      vdriven(2) = 0.d0
-      return
-    end if
 
     Bzdx = -15*c1*(x1-xh)**2*(x3-zh)/lh**(7./2)+ &
             (15*c2*(x1-xv)**3 + 15*c2*(x1-xv)*(x2-yv)**2) / lv**(7./2) + &
@@ -504,56 +371,46 @@ contains
 
     vdriven(1) = -ft*Bzdy
     vdriven(2) = ft*Bzdx
-
   end subroutine bottom_driven_velocity
 
   subroutine local_zeta(x^D, zeta)
     double precision, intent(in) :: x^D
     double precision, intent(out) :: zeta
 
-    double precision :: rv
-    rv = sqrt((x1-xv)**2 + (x2-0.d0)**2)
+    double precision :: r0
+
+    r0 = sqrt((x1-xv)**2 + (x2-0.d0)**2)
 
     select case (izeta)
     case (0)
       zeta = zeta0
     case (1)
-      zeta = zeta0*exp(-2*rv**2)
+      zeta = zeta0*exp(-r0**2/16.d0)
     case (2)
-      zeta = zeta0*cos(half*dpi*(x1-xv)/6.d0)*cos(half*dpi*(x2-0)/6.d0)
-    case (3)
-      zeta = radial_bump(x1, x2, R0, rm, A) ! R, r0, A to be specified 
+      zeta = zeta0*exp(zfac*(1-r0/rm))*(r0/rm)**zfac
     case default
       call mpistop("this izeta not supported")
     end select
   
   end subroutine local_zeta
 
-  function radial_bump(x1, x2, R, r0, A)
-    double precision, intent(in) :: x1, x2, R, r0, A
-    double precision :: radial_bump
-
-    double precision :: r_norm, exponent1, exponent2, r1, r0_norm, gamma
-
-    r1 = sqrt((x1-xv)**2 + x2**2)
-    r0_norm = r0/R
-    r_norm = r1/R
-    gamma = max(1.d0/r0_norm, 1.d0/(1-r0_norm))
-    exponent1 = gamma * r0_norm
-    exponent2 = gamma * (1 - r0_norm)
-
-    radial_bump = A * (r_norm ** exponent1) * ((1 - r_norm) ** exponent2)
-    if (r1 > R) radial_bump = 0
-  end function radial_bump
-
   function zeta_t(qt)
     double precision, intent(in) :: qt
     double precision :: zeta_t
+    double precision :: tramp
+
+    tramp = 500.d0/unit_time ! 500 s 
 
     if (qt < trelax) then
       zeta_t = 0
+    else if (qt < tramp+trelax) then
+      zeta_t = (qt-trelax)/tramp
+    else if (qt < tstop-tramp) then
+      zeta_t = one
+    else if (qt < tstop) then
+      zeta_t = (tstop-qt)/tramp
     else
-      zeta_t = 1/(1+exp(-(qt-trelax-ttwist)))
+      zeta_t = 0
     end if
 
   end function zeta_t
@@ -592,19 +449,6 @@ contains
       ! get the global corner index 
       ig^D=igrid_to_node(block%igrid, mype)%node%ig^D;
       imin^D=(ig^D-1)*block_nx^D;
-
-      ! moved to globaldata for mpi synchronization
-      ! if (qt == 0) then
-      ! assume the bottom blocks are fully refined
-      !   do ix1=ixCmin1,ixCmax1
-      !     do ix2=ixCmin2,ixCmax2
-      !       xb^D=block%x(ix1+1,ix2+1,ixOmin1,^D)-half*block%dx(ix1+1,ix2+1,ixOmin1,^D);
-      !       call wyper2016a_b3(xb^D,b3)
-      !       call local_zeta(xb^D, zeta)
-      !       b3g(imin1+ix1-nghostcells,imin2+ix2-nghostcells) = b3 * zeta ! now for uniform zeta
-      !     end do
-      !   end do
-      ! end if
 
       ! add STITCH (Dahlin et al. 2022) helicity inspired driven electric field
       ! direction of line integral of electric field
@@ -923,19 +767,11 @@ contains
                +29.d0*w(ix3+1^%3ixO^S,mag(:)))
          end do
        end if
-       if(mhd_energy .and. issolaratm) then
+       if(mhd_energy) then
          do ix3=ixOmin3,ixOmax3
            w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ix3,rho_)=rbc(ix3)
            w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ix3,p_)=pbc(ix3)
          enddo
-       else if (mhd_energy .and. .not. issolaratm) then
-         do ix3=ixOmin3,ixOmax3
-          w(ixO^S,rho_)=rhob*dexp(usr_grav*SRadius**2/Tiso*&
-                      (1.d0/SRadius-1.d0/(x(ixO^S,3)+SRadius)))
-          w(ixO^S,p_)=w(ixO^S,rho_)*Tiso
-         enddo
-       else if (mhd_energy .and. .not. issolaratm .and. .not. mhd_gravity) then
-        stop 'No mhd_gravity and .not. issolaratm are not set'
        else if(mhd_adiab==0) then
          ! zero beta
          w(ixO^S,rho_)=sum(w(ixO^S,mag(:))**2,dim=ndim+1)
@@ -945,26 +781,10 @@ contains
        end if
 
       ! driven velocity at the parasitic polarity
-      if (isvdriven) then
-        if (isfluxcancel) then
-        {do ix^DB=ixOmin^DB,ixOmax^DB\}
-          call bottom_driven_velocity(x(ix^D,1),x(ix^D,2),x(ix^D,3),qt,vdriven)
-          w(ix^D,mom(1)) = v0*vdriven(1)
-        {end do\}
-        else if (B0field) then
-          if (qt < ttwist) then
-          {do ix^DB=ixOmin^DB,ixOmax^DB\}
-            if ((x(ix^D,1) < 0.d0) .and. (block%B0(ix^D,3,b0i) > Bl) .and. (block%B0(ix^D,3,b0i) < Br)) then
-              gBx = kB*(Br-Bl)/block%B0(ix^D,3,b0i)*tanh(kB*(block%B0(ix^D,3,b0i)-Bl)/(Br-Bl))
-              call bottom_driven_velocity(x(ix^D,1),x(ix^D,2),x(ix^D,3),qt,vdriven)
-              w(ix^D,mom(1)) = v0*gBx*vdriven(1)
-              w(ix^D,mom(2)) = v0*gBx*vdriven(2)
-              end if
-          {end do\}
-          end if
-        end if
-      end if
-
+      ! {do ix^DB=ixOmin^DB,ixOmax^DB\}
+      !   call bottom_driven_velocity(x(ix^D,1),x(ix^D,2),x(ix^D,3),qt,vdriven)
+      !   w(ix^D,mom(1)) = v0*vdriven(1)
+      ! {end do\}
        call mhd_to_conserved(ixI^L,ixO^L,w,x)
      case(6)
        w(ixO^S,mom(1))=w(ixOmin1:ixOmax1,ixOmin2:ixOmax2,ixOmin3-1:ixOmin3-nghostcells:-1,mom(1))/&
@@ -1013,7 +833,7 @@ contains
            !   +4.d0*w(ix3-1^%3ixO^S,mag(:)))
          end do
        end if
-       if(mhd_energy .and. issolaratm) then
+       if(mhd_energy) then
          ixIM^L=ixO^L;
          ixIMmin3=ixOmin3-1;ixIMmax3=ixOmax3;
          call getggrav(tmp1,ixI^L,ixIM^L,x)
@@ -1155,10 +975,11 @@ contains
     if(level .eq. refine_max_level) then
       coarsen=1
     endif
-    if(any(abs(x(ixO^S,3)) .lt. htra)) then
+    if (block%is_physical_boundary(5)) then
       refine=1
       coarsen=-1
     end if
+
   end subroutine special_refine_grid
 
   !==============================================================================
@@ -1210,21 +1031,21 @@ contains
       nwspecial = nwspecial + 1
     end do
     ! calculate Lorentz force
-    qvec(ixO^S,1:ndir)=zero
-    do idir=1,ndir; do jdir=1,ndir; do kdir=idirmin,3
-      if(lvc(idir,jdir,kdir)/=0)then
-        tmp(ixO^S)=curlvec(ixO^S,jdir)*w(ixO^S,mag(kdir))
-        if(lvc(idir,jdir,kdir)==1)then
-          qvec(ixO^S,idir)=qvec(ixO^S,idir)+tmp(ixO^S)
-        else
-          qvec(ixO^S,idir)=qvec(ixO^S,idir)-tmp(ixO^S)
-        endif
-      endif
-    enddo; enddo; enddo
-    do idir=1,ndir
-      w(ixO^S,nw+nwspecial)=qvec(ixO^S,idir)
-      nwspecial = nwspecial + 1
-    end do
+    ! qvec(ixO^S,1:ndir)=zero
+    ! do idir=1,ndir; do jdir=1,ndir; do kdir=idirmin,3
+    !   if(lvc(idir,jdir,kdir)/=0)then
+    !     tmp(ixO^S)=curlvec(ixO^S,jdir)*w(ixO^S,mag(kdir))
+    !     if(lvc(idir,jdir,kdir)==1)then
+    !       qvec(ixO^S,idir)=qvec(ixO^S,idir)+tmp(ixO^S)
+    !     else
+    !       qvec(ixO^S,idir)=qvec(ixO^S,idir)-tmp(ixO^S)
+    !     endif
+    !   endif
+    ! enddo; enddo; enddo
+    ! do idir=1,ndir
+    !   w(ixO^S,nw+nwspecial)=qvec(ixO^S,idir)
+    !   nwspecial = nwspecial + 1
+    ! end do
     ! find magnetic dips
     !dip=0.d0
     !do idir=1,ndir
@@ -1268,15 +1089,25 @@ contains
     use mod_global_parameters
     character(len=*) :: varnames
 
-    varnames='j1 j2 j3 L1 L2 L3'
+    varnames='j1 j2 j3'
   end subroutine specialvarnames_output
 
-  subroutine my_analysis()
+  subroutine set_output_vars(ixI^L,ixO^L,qt,w,x)
+    use mod_global_parameters
 
+    integer, intent(in)             :: ixI^L,ixO^L
+    double precision, intent(in)    :: qt, x(ixI^S,1:ndim)
+    double precision, intent(inout) :: w(ixI^S,nw)
+
+    w(ixO^S,i_b1)=block%B0(ixO^S,1,0)+w(ixO^S,mag(1))
+    w(ixO^S,i_b2)=block%B0(ixO^S,2,0)+w(ixO^S,mag(2))
+    w(ixO^S,i_b3)=block%B0(ixO^S,3,0)+w(ixO^S,mag(3))
+  end subroutine set_output_vars
+
+  subroutine my_analysis()
     if (mype == 0) then
       call write_b3g_binary()
     end if
-
   end subroutine my_analysis
 
   subroutine write_b3g_binary()
