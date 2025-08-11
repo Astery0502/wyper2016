@@ -8,6 +8,7 @@
         slice_type='dat'
  /
         base_filename='/scratch/leuven/377/vsc37715/fanspine/output/stitch'
+        base_filename='/scratch/guoyang1/fsh/stitch'
         convert_type='vtuBCCmpi'
 
  &savelist
@@ -32,7 +33,7 @@
         dtsave_custom=0.05d0
 
  &stoplist
-        time_max=20.0d0 ! first test the relaxation time
+        time_max=30.0d0 ! first test the relaxation time
  /
         it_max=10
 
@@ -66,16 +67,16 @@
         block_nx1=16
         block_nx2=16
         block_nx3=16
-        domain_nx1=80
+        domain_nx1=64
         domain_nx2=64
-        domain_nx3=48
+        domain_nx3=64
         iprob=1
-        xprobmin1=-10.0d0
-        xprobmax1=5.0d0
-        xprobmin2=-6.0d0
-        xprobmax2=6.0d0
+        xprobmin1=-9.0d0
+        xprobmax1=-1.0d0
+        xprobmin2=-4.0d0
+        xprobmax2=4.0d0
         xprobmin3=0.3d0
-        xprobmax3=9.3d0
+        xprobmax3=8.3d0
         ditregrid=3
  /
         w_refine_weight(1)=0.4d0
@@ -117,8 +118,8 @@
         Bv = 25.d0
         xv = -5.d0
         ! driven electric field
-        zeta0 = 0.05d0
-        izeta = 2
+        zeta0 = 0.1d0
+        izeta = 1
         trelax = 5.d0
         tstop = 30.d0
         rm = 2.1d0

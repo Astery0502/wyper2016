@@ -385,7 +385,7 @@ contains
     case (0)
       zeta = zeta0
     case (1)
-      zeta = zeta0*exp(-r0**2/16.d0)
+      zeta = zeta0*cos(dpi*(x1+5.d0)/12.d0)*cos(dpi*(x2-0.d0)/12.d0)
     case (2)
       zeta = zeta0*exp(zfac*(1-r0/rm))*(r0/rm)**zfac
     case default
