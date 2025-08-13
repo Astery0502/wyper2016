@@ -23,6 +23,11 @@ module mod_usr
   ! set aux output variables ma1, ma2, ma3 in B0field case
   integer :: i_b1, i_b2, i_b3
 
+  !> parameters for special amr over specific points
+  character(len=std_len) :: csvfile
+  integer :: npoints=0
+  double precision, allocatable :: pos(:,:)
+
 contains
 
   !==============================================================================
@@ -68,7 +73,8 @@ contains
     integer                      :: n
  
     namelist /my_list/ dh, Bh, dv, Bv, xv, &
-            zeta0, izeta, trelax, tstop, rm, zfac
+            zeta0, izeta, trelax, tstop, rm, zfac, &
+            csvfile,npoints
  
     do n = 1, size(files)
        open(unitpar, file=trim(files(n)), status="old")
@@ -135,6 +141,11 @@ contains
     end if
 
     if(mhd_energy) call inithdstatic
+
+    if(npoints>0) then
+      allocate(pos(3,npoints))
+      call read_csv(npoints, pos, csvfile)
+    end if
   end subroutine initglobaldata_usr
 
   !> initialize solar atmosphere table in a vertical line through the global domain
@@ -968,13 +979,27 @@ contains
     integer, intent(in) :: igrid, level, ixI^L, ixO^L
     double precision, intent(in) :: qt, w(ixI^S,1:nw), x(ixI^S,1:ndim)
     integer, intent(inout) :: refine, coarsen
+    integer :: i
 
-    if(level .ge. 3) then
+    if (npoints > 0) then
+      do i=1,npoints
+        if (pos(1,i) >= minval(x(ixO^S,1)) .and. pos(1,i) <= maxval(x(ixO^S,1)) .and. &
+            pos(2,i) >= minval(x(ixO^S,2)) .and. pos(2,i) <= maxval(x(ixO^S,2)) .and. &
+            pos(3,i) >= minval(x(ixO^S,3)) .and. pos(3,i) <= maxval(x(ixO^S,3)) .and. &
+            level .le. refine_max_level-3) then
+          refine=1
+          coarsen=-1
+          exit
+        else 
+          refine=-1
+          coarsen=-1
+        end if
+      end do
+    else 
       refine=-1
-    endif
-    if(level .eq. refine_max_level) then
-      coarsen=1
-    endif
+      coarsen=-1
+    end if
+
     if (block%is_physical_boundary(5)) then
       refine=1
       coarsen=-1
@@ -1169,5 +1194,19 @@ contains
     end if
 
   end subroutine my_process_grid
+
+  subroutine read_csv(npoints, pos, ifile)
+    character(len=std_len), intent(in) :: ifile
+    integer, intent(in) :: npoints
+    double precision, intent(out) :: pos(3, npoints)
+    integer :: iunit, i, ierr
+    character(len=std_len) :: line
+    double precision :: x, y, z
+
+    iunit = 10
+    open(unit=iunit, file=ifile, status='old', action='read')
+    read(iunit, *, end=100) pos(:,:)
+    100 close(iunit)
+  end subroutine read_csv
 
 end module mod_usr
