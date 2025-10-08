@@ -1,19 +1,20 @@
 !setup.pl -d=3
  &filelist
-        base_filename='data/stitch'
+        base_filename='/scratch/leuven/377/vsc37715/fanspine/output/stitch'
         saveprim=.true.
         convert_type='vtuBCCmpi'
         autoconvert=f
         nwauxio=3
         slice_type='dat'
  /
-        restart_from_file='/data/leuven/377/vsc37715/fanspine/stitch0000.dat'
+        restart_from_file='/data/leuven/377/vsc37715/fanspine/stitch0025.dat'
         base_filename='/scratch/leuven/377/vsc37715/fanspine/output/stitch'
         base_filename='/scratch/guoyang1/fsh/stitch'
+        base_filename='data/stitch'
         convert_type='vtuBCCmpi'
 
  &savelist
-        !itsave(1,1)=0
+        itsave(1,1)=0
         !itsave(1,2)=0
         dtsave_log=1.d-3
         dtsave_dat=5.d0
@@ -34,7 +35,7 @@
         dtsave_custom=0.05d0
 
  &stoplist
-        time_max=20.0d0 ! first test the relaxation time
+        time_max=120.0d0 ! first test the relaxation time
  /
         it_max=10
 
@@ -60,6 +61,7 @@
 
  &meshlist
         refine_max_level=6
+        !itfixgrid=0
         refine_threshold=20*0.3d0
         w_refine_weight(1)=0.4d0
         w_refine_weight(6)=0.2d0
@@ -99,8 +101,8 @@
         typedivbfix='ct'
         B0field=.true.
         B0field_forcefree=.true.
-        mhd_trac=.true.
-        mhd_trac_type=1
+        !mhd_trac=.true.
+        !mhd_trac_type=1
  /
         mhd_trac_mask=2.d0
         B0field=.false.
@@ -122,10 +124,11 @@
         zeta0 = 0.01d0
         izeta = 1
         trelax = 5.d0
-        tstop = 30.d0
+        tstop = 100.d0
         rm = 2.1d0
         zfac = 20.d0
         ! points to refine
-        csvfile='/data/leuven/377/vsc37715/fanspine/line_points.csv'
-        npoints=57845
+        !csvfile='/data/leuven/377/vsc37715/fanspine/line_points.csv'
+        !npoints=57845
+        npoints=0
 /

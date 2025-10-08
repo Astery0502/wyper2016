@@ -120,8 +120,9 @@ contains
     cv = (Bv*dv**3.d0)*half
     ch = (Bh*dh**3.d0)*half
 
-    nxlmax1 = domain_nx1*2**(refine_max_level-1)
-    nxlmax2 = domain_nx2*2**(refine_max_level-1)
+    !> max level is 6, only refine bottom boundary to level 4
+    nxlmax1 = domain_nx1*2**(refine_max_level-3)
+    nxlmax2 = domain_nx2*2**(refine_max_level-3)
     dxlmax1 = (xprobmax1-xprobmin1)/dble(nxlmax1)
     dxlmax2 = (xprobmax2-xprobmin2)/dble(nxlmax2)
 
@@ -414,12 +415,8 @@ contains
 
     if (qt < trelax) then
       zeta_t = 0
-    else if (qt < tramp+trelax) then
-      zeta_t = (qt-trelax)/tramp
-    else if (qt < tstop-tramp) then
-      zeta_t = one
     else if (qt < tstop) then
-      zeta_t = (tstop-qt)/tramp
+      zeta_t = one
     else
       zeta_t = 0
     end if
@@ -979,14 +976,16 @@ contains
     integer, intent(in) :: igrid, level, ixI^L, ixO^L
     double precision, intent(in) :: qt, w(ixI^S,1:nw), x(ixI^S,1:ndim)
     integer, intent(inout) :: refine, coarsen
-    integer :: i
+    integer :: i, idirmin
+
+    double precision :: btotal(ixI^S,1:ndir), current(ixI^S,1:ndir), joverbcr(ixO^S) 
 
     if (npoints > 0) then
       do i=1,npoints
         if (pos(1,i) >= minval(x(ixO^S,1)) .and. pos(1,i) <= maxval(x(ixO^S,1)) .and. &
             pos(2,i) >= minval(x(ixO^S,2)) .and. pos(2,i) <= maxval(x(ixO^S,2)) .and. &
             pos(3,i) >= minval(x(ixO^S,3)) .and. pos(3,i) <= maxval(x(ixO^S,3)) .and. &
-            level .le. refine_max_level-3) then
+            level .le. refine_max_level-4) then
           refine=1
           coarsen=-1
           exit
@@ -995,14 +994,23 @@ contains
           coarsen=-1
         end if
       end do
-    else 
-      refine=-1
-      coarsen=-1
-    end if
 
-    if (block%is_physical_boundary(5)) then
-      refine=1
-      coarsen=-1
+      if (block%is_physical_boundary(5) .and. level<=refine_max_level-3) then
+        refine=1
+        coarsen=-1
+      end if
+
+      btotal = w(ixI^S,mag(:))
+      call curlvector(btotal,ixI^L,ixO^L,current,idirmin,1,ndir)
+      joverbcr = dsqrt(sum(current(ixO^S,:)**2,dim=ndim+1))/dsqrt(sum(btotal(ixO^S,:)**2,dim=ndim+1))*dxlevel(1)
+      if ((qt>tstop) .and. (any(joverbcr>0.1d0))) then
+        refine=1
+        coarsen=-1
+      else
+        refine=-1
+        coarsen=0
+      end if
+
     end if
 
   end subroutine special_refine_grid
