@@ -997,7 +997,7 @@ contains
 
     end if
 
-    if (all(x(ixO^S,3)<5.d0) .and. all(x(ixO^S,1)-xprobmin1>0.5d0) .and. all(xprobmax1-x(ixO^S,1)>0.5d0) &
+    if (all(x(ixO^S,3)<5.d0) .and. all(x(ixO^S,3)>0.5d0) .and. all(x(ixO^S,1)-xprobmin1>0.5d0) .and. all(xprobmax1-x(ixO^S,1)>0.5d0) &
       .and. all(x(ixO^S,2)-xprobmin2>0.5d0) .and. all(xprobmax2-x(ixO^S,2)>0.5d0)) then
       btotal = w(ixI^S,mag(:))
       call curlvector(btotal,ixI^L,ixO^L,current,idirmin,1,ndir)
