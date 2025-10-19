@@ -1,6 +1,7 @@
 !setup.pl -d=3
  &filelist
         base_filename='/scratch/leuven/377/vsc37715/fanspine/output/stitch'
+        restart_from_file='/data/leuven/377/vsc37715/fanspine/stitch0025.dat'
         saveprim=.true.
         convert_type='vtuBCCmpi'
         autoconvert=f

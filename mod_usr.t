@@ -995,22 +995,25 @@ contains
         end if
       end do
 
-      if (block%is_physical_boundary(5) .and. level<=refine_max_level-3) then
-        refine=1
-        coarsen=-1
-      end if
+    end if
 
+    if (x(ixO^S,3)<5.d0 .and. (x(ixO^S,1)-xprobmin1>0.5d0) .and. (xprobmax1-x(ixO^S,1)>0.5d0) &
+      .and. (x(ixO^S,2)-xprobmin2>0.5d0) .and. (xprobmax2-x(ixO^S,2)>0.5d0)) then
       btotal = w(ixI^S,mag(:))
       call curlvector(btotal,ixI^L,ixO^L,current,idirmin,1,ndir)
       joverbcr = dsqrt(sum(current(ixO^S,:)**2,dim=ndim+1))/dsqrt(sum(btotal(ixO^S,:)**2,dim=ndim+1))*dxlevel(1)
-      if ((qt>tstop) .and. (any(joverbcr>0.1d0))) then
+      if ((qt>tstop) .and. (any(joverbcr>0.1d0)) .and. (.not. any(x(ixO^S,3)<1.d0))) then
         refine=1
         coarsen=-1
       else
         refine=-1
         coarsen=0
       end if
+    end if
 
+    if (block%is_physical_boundary(5) .and. level<=refine_max_level-3) then
+      refine=1
+      coarsen=-1
     end if
 
   end subroutine special_refine_grid
