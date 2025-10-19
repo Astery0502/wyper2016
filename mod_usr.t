@@ -1011,8 +1011,12 @@ contains
       end if
     end if
 
-    if (block%is_physical_boundary(5) .and. level<=refine_max_level-3) then
-      refine=1
+    if (block%is_physical_boundary(5)) then
+      if (level<=refine_max_level-3) then
+        refine=1
+        coarsen=-1
+      end if
+      refine=-1
       coarsen=-1
     end if
 
