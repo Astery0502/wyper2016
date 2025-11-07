@@ -9,7 +9,7 @@ module mod_usr
   double precision :: pa(jmax),ra(jmax),ya(jmax)
   double precision :: usr_grav,SRadius,rhob,Tiso,dr,gzone,bQ0,heatunit
 
-  double precision :: dh, Bh, dv, Bv, xv ! fan-spine parameters
+  double precision :: dh, Bh, dv, Bv, xv, dp ! fan-spine parameters
   double precision :: Bl, Br, cv, ch, htra
   double precision :: trelax, tstop
   double precision :: rm, zfac
@@ -52,7 +52,7 @@ contains
     usr_set_electric_field => driven_electric_field
     usr_set_B0          => specialset_B0
     usr_set_J0          => specialset_J0
-    ! usr_modify_output => set_output_vars
+    usr_modify_output => set_output_vars
 
     ! usr_process_grid    => my_process_grid 
     ! usr_write_analysis  => my_analysis
@@ -72,7 +72,7 @@ contains
     character(len=*), intent(in) :: files(:)
     integer                      :: n
  
-    namelist /my_list/ dh, Bh, dv, Bv, xv, &
+    namelist /my_list/ dh, Bh, dv, Bv, xv, dp, &
             zeta0, izeta, trelax, tstop, rm, zfac, &
             csvfile,npoints
  
@@ -117,8 +117,11 @@ contains
     usr_grav=-2.74d4*unit_length/unit_velocity**2  ! solar gravity
     SRadius=6.955d10/unit_length                   ! Solar radius
 
-    cv = (Bv*dv**3.d0)*half
-    ch = (Bh*dh**3.d0)*half
+    dh = dh + dp
+    dv = dv + dp
+    ! for fan-spine field use in wyper2016a_field
+    cv = (Bv*(dv-dp)**3.d0)*half
+    ch = (Bh*(dh-dp)**3.d0)*half
 
     !> max level is 6, only refine bottom boundary to level 4
     nxlmax1 = domain_nx1*2**(refine_max_level-3)
@@ -135,7 +138,7 @@ contains
         do ix2=0,nxlmax2
           xlmax2 = xprobmin2 + ix2*dxlmax2
           call wyper2016a_b3(xlmax1, xlmax2, xprobmin3, b3)
-          call local_zeta(xlmax1, xlmax2, xprobmin3, zeta)
+          call local_zeta(xlmax1, xlmax2, xprobmin3, b3, zeta)
           b3g(ix1, ix2) = b3 * zeta
         end do
       end do
@@ -385,19 +388,24 @@ contains
     vdriven(2) = ft*Bzdx
   end subroutine bottom_driven_velocity
 
-  subroutine local_zeta(x^D, zeta)
+  subroutine local_zeta(x^D, b3, zeta)
     double precision, intent(in) :: x^D
+    double precision, intent(in) :: b3
     double precision, intent(out) :: zeta
 
     double precision :: r0
 
     r0 = sqrt((x1-xv)**2 + (x2-0.d0)**2)
+    if (b3 < 0) then
+      zeta = 0
+      return
+    end if
 
     select case (izeta)
     case (0)
       zeta = zeta0
     case (1)
-      zeta = zeta0*cos(dpi*(x1+5.d0)/12.d0)*cos(dpi*(x2-0.d0)/12.d0)
+      zeta = zeta0*cos(dpi*(x1+5.d0)/1.d0)*cos(dpi*(x2-0.d0)/1.d0)
     case (2)
       zeta = zeta0*exp(zfac*(1-r0/rm))*(r0/rm)**zfac
     case default
@@ -980,12 +988,15 @@ contains
 
     double precision :: btotal(ixI^S,1:ndir), current(ixI^S,1:ndir), joverbcr(ixO^S) 
 
+    refine=-1
+    coarsen=-1
+
     if (npoints > 0) then
       do i=1,npoints
         if (pos(1,i) >= minval(x(ixO^S,1)) .and. pos(1,i) <= maxval(x(ixO^S,1)) .and. &
             pos(2,i) >= minval(x(ixO^S,2)) .and. pos(2,i) <= maxval(x(ixO^S,2)) .and. &
             pos(3,i) >= minval(x(ixO^S,3)) .and. pos(3,i) <= maxval(x(ixO^S,3)) .and. &
-            level .le. refine_max_level-4) then
+            level .le. refine_max_level-3) then
           refine=1
           coarsen=-1
           exit
@@ -997,12 +1008,13 @@ contains
 
     end if
 
+    if (qt>tstop) then
     if (all(x(ixO^S,3)<5.d0) .and. all(x(ixO^S,3)>0.5d0) .and. all(x(ixO^S,1)-xprobmin1>0.5d0) .and. all(xprobmax1-x(ixO^S,1)>0.5d0) &
       .and. all(x(ixO^S,2)-xprobmin2>0.5d0) .and. all(xprobmax2-x(ixO^S,2)>0.5d0)) then
-      btotal = w(ixI^S,mag(:))
+      btotal = w(ixI^S,mag(:))+block%B0(ixI^S,:,0)
       call curlvector(btotal,ixI^L,ixO^L,current,idirmin,1,ndir)
       joverbcr = dsqrt(sum(current(ixO^S,:)**2,dim=ndim+1))/dsqrt(sum(btotal(ixO^S,:)**2,dim=ndim+1))*dxlevel(1)
-      if ((qt>tstop) .and. (any(joverbcr>0.1d0)) .and. (.not. any(x(ixO^S,3)<1.d0))) then
+      if (any(joverbcr>0.1d0)) then
         refine=1
         coarsen=-1
       else
@@ -1010,14 +1022,13 @@ contains
         coarsen=0
       end if
     end if
+    end if
 
     if (block%is_physical_boundary(5)) then
-      if (level<=refine_max_level-3) then
+      if (level<=refine_max_level-4) then
         refine=1
         coarsen=-1
       end if
-      refine=-1
-      coarsen=-1
     end if
 
   end subroutine special_refine_grid
