@@ -1,6 +1,6 @@
-data/*
 *
+!*/
+data/*
 !mod_usr.t
 !amrvac.par
-!*.ipynb
-
+!./*.ipynb
